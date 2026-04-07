@@ -1,0 +1,122 @@
+# ContractOS — Cursor AI 개발 규칙
+
+## 프로젝트 목적
+SBS 방송 계약서 자동 작성·관리 플랫폼 (내부 B2B 엔터프라이즈 웹앱)
+
+## 현재 상태
+- `index.html` — 완전 동작하는 Vanilla HTML/CSS/JS 프로토타입 (단일 파일)
+- `contract-filter.html` — 계약 매트릭스 필터 페이지 (별도 단일 파일)
+- `src/` — React + TypeScript 마이그레이션 대상 소스
+
+## 기술 스택 (마이그레이션 목표)
+- **Frontend**: React 18 + TypeScript + Vite
+- **Styling**: Tailwind CSS v3 (커스텀 토큰 등록됨)
+- **State**: Zustand
+- **Backend**: NestJS (Node.js) + PostgreSQL + pgvector
+- **Auth**: JWT + RBAC (roles: sales | legal | admin)
+- **AI**: Claude API + RAG (pgvector)
+
+## 도메인 핵심 용어 (한국어 그대로 유지)
+```
+장르         : 교양 | 예능 | 드라마
+계약형태     : 2자계약 | 위수탁 계약 | 언진원 계약
+계약서유형   : 협찬 계약서 | 마케팅 라이선스 | 대행 계약서 | 정부 계약서
+조항 state  : approved | review | ai
+역할(role)  : sales | legal | admin
+```
+
+## 편집기 3단계 선택 플로우 (절대 변경 금지)
+```
+① selectGenre(genre)
+   ↓
+② selectType(type)       ← 장르별 계약형태 동적 렌더
+   ↓
+③ selectDoc(docName)     ← 계약형태별 가능한 계약서유형만 활성화
+   ↓
+   openEditor()           ← TEMPLATES 데이터에서 clauses 로드
+```
+
+## 색상 토큰 (CSS 변수 → Tailwind 토큰)
+```
+--p800: #1E40AF  →  primary    (CTA 버튼, 활성 상태)
+--s700: #15803D  →  success    (승인됨, approved 조항)
+--w700: #B45309  →  warning    (검토 필요, review 조항)
+--d700: #B91C1C  →  danger     (거부, 오류)
+--i700: #0369A1  →  info       (AI 제안, ai 조항)
+--n900: #0F172A  →  주 텍스트
+--n200: #E2E8F0  →  기본 보더
+--n50:  #F8FAFC  →  페이지 배경
+```
+
+## 조항 state별 시각 규칙
+```
+approved  → bg-green-50  border-green-300  badge: "승인됨"  (초록)
+review    → bg-amber-50  border-amber-300  badge: "검토 필요" (노랑)
+ai        → bg-blue-50   border-blue-300   badge: "AI 제안"  (파랑) + 수락/거부 버튼
+```
+
+## RBAC 접근 권한
+```
+기능                | sales | legal | admin
+계약서 생성·편집    |  ✅   |  ❌   |  ✅
+조항 수락·거부      |  ✅   |  ❌   |  ✅
+검토 완료·반려      |  ❌   |  ✅   |  ✅
+템플릿 관리(CRUD)   |  ❌   |  ❌   |  ✅
+사용자 관리         |  ❌   |  ❌   |  ✅
+감사 로그 전체 조회 |  ❌   |  ❌   |  ✅
+```
+
+## 데이터 구조
+```typescript
+// 템플릿 3단계 키 구조
+TEMPLATES[장르][계약형태][계약서유형] = {
+  label: string
+  ver: string
+  tags: string[]
+  color: string
+  aiSuggest: { title, reason, body }
+  clauses: Clause[]
+}
+
+// 조항
+interface Clause {
+  num: string        // "§1"
+  title: string
+  state: 'approved' | 'review' | 'ai'
+  body: string       // [  ] 플레이스홀더 포함
+}
+```
+
+## 개발 우선순위 TODO
+1. [ ] Vite + React + TypeScript 초기 세팅
+2. [ ] Tailwind config — 커스텀 색상 토큰 등록 (primary/success/warning/danger/info)
+3. [ ] AppShell 컴포넌트 (Topbar + Sidebar + 페이지 라우팅)
+4. [ ] TemplateSelector 컴포넌트 (3단계 선택 위저드)
+5. [ ] ClauseBlock 컴포넌트 (state별 스타일 + 인라인 편집)
+6. [ ] AiPanel 컴포넌트 (수락→조항 삽입, 거부→로그 기록)
+7. [ ] VersionTimeline 컴포넌트
+8. [ ] AuditLog 컴포넌트
+9. [ ] 계약 매트릭스 필터 페이지 (contract-filter.html 참고)
+10. [ ] 백엔드 API 연동 (계약서 CRUD, 버전 저장)
+11. [ ] JWT 인증 + 역할별 라우트 가드
+
+## 새 컴포넌트 체크리스트
+- [ ] TypeScript interface 정의
+- [ ] 조항 state(approved|review|ai) 처리
+- [ ] 역할별 렌더링 분기 (sales=편집가능, legal=읽기전용)
+- [ ] AI 면책 고지 문구 항상 포함
+- [ ] 비가역 행위(삭제/폐기/승인)는 confirm 모달 필수
+- [ ] 감사 로그 이벤트 emit
+
+## 계약 매트릭스 (장르×계약형태×계약서유형 가능 조합)
+| 장르 | 계약형태 | 계약서유형 | 계약 구분 |
+|------|---------|-----------|---------|
+| 교양 | 2자계약 | 협찬 계약서 | SBS-광고주/대행사 |
+| 교양 | 2자계약 | 대행 계약서 | SBS-MC |
+| 교양 | 위수탁 계약 | 협찬 계약서 | MC-협찬주 / SBS-MC |
+| 교양 | 언진원 계약 | 정부 계약서 | SBS-언진 |
+| 예능 | 2자계약 | 마케팅 라이선스 | SBS-광고주/MC |
+| 예능 | 위수탁 계약 | 마케팅 라이선스 | MC-협찬주 / SBS-MC |
+| 예능 | 위수탁 계약 | 협찬 계약서 | SBS-협찬주 |
+| 예능 | 언진원 계약 | 마케팅 라이선스 | SBS-언진 |
+| 드라마 | — | — | 추후 정의 |

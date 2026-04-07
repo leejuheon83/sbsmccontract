@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply font-sans text-sm leading-normal text-neutral-900 bg-neutral-50 antialiased;
+}
+
+/* 조항 본문: 플레이스홀더 → 인라인 필드 (renderBodyWithFields) */
+@layer components {
+  .clause-body {
+    @apply text-[13px] leading-relaxed text-neutral-700;
+  }
+
+  .clause-body--paragraphs {
+    @apply flex flex-col gap-3;
+  }
+
+  .clause-body__paragraph {
+    @apply border-l-2 border-neutral-200 pl-3;
+  }
+
+  .clause-body__static {
+    @apply whitespace-pre-wrap text-inherit;
+  }
+
+  .clause-body__field {
+    @apply mx-0.5 inline-block max-w-[min(40ch,100%)] align-baseline rounded-md border-0 border-b-2 border-warning-500 bg-warning-50 px-1.5 py-0.5 font-sans text-[13px] text-neutral-900 shadow-sm transition-[border-color,background-color,box-shadow] duration-150;
+  }
+
+  .clause-body__field:hover {
+    @apply bg-warning-100/90;
+  }
+
+  .clause-body__field:focus {
+    @apply border-primary-600 bg-primary-50 shadow-none outline-none;
+  }
+
+  .clause-body__field:focus-visible {
+    @apply ring-2 ring-primary-400/50 ring-offset-1 ring-offset-white;
+  }
+
+  .clause-rich-body {
+    @apply overflow-x-auto text-[13px] leading-relaxed text-neutral-800;
+  }
+
+  .clause-rich-body table {
+    @apply my-2 w-full border-collapse;
+  }
+
+  .clause-rich-body th,
+  .clause-rich-body td {
+    @apply border border-neutral-300 px-2 py-1 align-top;
+  }
+
+  .clause-rich-body p {
+    @apply my-1;
+  }
+
+  .clause-rich-body[contenteditable='false'] {
+    @apply cursor-default;
+  }
+
+  .clause-rich-body .co-editable-highlight {
+    @apply rounded-sm ring-2 ring-warning-500/60 ring-offset-1;
+    background-color: #fef08a;
+  }
+
+  .clause-rich-body .co-editable-highlight:focus {
+    @apply outline-none ring-2 ring-primary-500;
+  }
+}

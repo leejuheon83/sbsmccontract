@@ -1,0 +1,389 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { listDrafts, patchDraft } from '../lib/contractDraftDb';
+import {
+  matchesContractListTab,
+  type ContractListTab,
+} from '../lib/contractListFilter';
+import type {
+  ContractReviewStatus,
+  StoredContractDraft,
+} from '../lib/contractDraftTypes';
+import { summarizeDraftBodyPreview } from '../lib/contractDraftSummary';
+import { useAppStore } from '../store/useAppStore';
+
+function formatUpdatedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('ko-KR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function draftDisplayName(d: StoredContractDraft): string {
+  const t = d.contractDocumentTitle.trim();
+  if (t) return t;
+  return d.templateLabel.trim() || '제목 없음';
+}
+
+const REVIEW_OPTIONS: { value: ContractReviewStatus; label: string }[] = [
+  { value: 'pending', label: '대기' },
+  { value: 'in_review', label: '검토중' },
+  { value: 'approved', label: '승인' },
+  { value: 'rejected', label: '반려' },
+];
+
+/** 목록 `검토/승인` 배지 — 단계별 색 구분 */
+function reviewApprovalBadgeClass(status: ContractReviewStatus): string {
+  switch (status) {
+    case 'in_review':
+      return 'border-warning-300 bg-warning-50 text-warning-900';
+    case 'approved':
+      return 'border-success-300 bg-success-50 text-success-900';
+    case 'rejected':
+      return 'border-danger-300 bg-danger-50 text-danger-900';
+    default:
+      return 'border-info-300 bg-info-50 text-info-900';
+  }
+}
+
+const LIST_TABS: { id: ContractListTab; label: string }[] = [
+  { id: 'all', label: '전체' },
+  { id: 'draft', label: '초안' },
+  { id: 'in_review', label: '검토 중' },
+  { id: 'done', label: '완료' },
+  { id: 'archived', label: '보관' },
+];
+
+function listStatusLabel(d: StoredContractDraft): { label: string; className: string } {
+  if (d.archived) {
+    return {
+      label: '보관',
+      className: 'bg-neutral-200 text-neutral-700',
+    };
+  }
+  switch (d.reviewStatus ?? 'pending') {
+    case 'in_review':
+      return {
+        label: '검토 중',
+        className: 'bg-info-100 text-info-800',
+      };
+    case 'approved':
+      return {
+        label: '완료',
+        className: 'bg-success-100 text-success-800',
+      };
+    case 'rejected':
+      return {
+        label: '반려',
+        className: 'bg-danger-100 text-danger-800',
+      };
+    default:
+      return {
+        label: '초안',
+        className: 'bg-neutral-100 text-neutral-600',
+      };
+  }
+}
+
+export function ContractsPage() {
+  const showEditorTemplatePicker = useAppStore((s) => s.showEditorTemplatePicker);
+  const loadStoredDraft = useAppStore((s) => s.loadStoredDraft);
+  const openReviewDraft = useAppStore((s) => s.openReviewDraft);
+  const showToast = useAppStore((s) => s.showToast);
+
+  const [drafts, setDrafts] = useState<StoredContractDraft[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [listTab, setListTab] = useState<ContractListTab>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const refreshDrafts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await listDrafts();
+      list.sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+      setDrafts(list);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDrafts();
+  }, [refreshDrafts]);
+
+  const tabFiltered = useMemo(
+    () => drafts.filter((d) => matchesContractListTab(d, listTab)),
+    [drafts, listTab],
+  );
+
+  const visibleDrafts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return tabFiltered;
+    return tabFiltered.filter((d) => {
+      const name = draftDisplayName(d).toLowerCase();
+      const type = (d.templateLabel || '').toLowerCase();
+      return name.includes(q) || type.includes(q);
+    });
+  }, [tabFiltered, searchQuery]);
+
+  const emptyMessage = (() => {
+    if (drafts.length === 0) {
+      return '로컬에 저장된 계약 초안이 없습니다. 계약서 작성 화면에서 저장하면 여기에 표시됩니다. 상단의 새 계약서로 초안을 만들 수 있습니다.';
+    }
+    if (tabFiltered.length === 0) {
+      const labels: Record<ContractListTab, string> = {
+        all: '표시할 항목이 없습니다.',
+        draft: '초안 상태인 계약이 없습니다.',
+        in_review: '검토 중인 계약이 없습니다.',
+        done: '완료된 계약이 없습니다.',
+        archived: '보관된 계약이 없습니다. 목록에서 보관을 선택하면 여기에 모입니다.',
+      };
+      return labels[listTab];
+    }
+    if (visibleDrafts.length === 0) {
+      return '검색 조건에 맞는 계약이 없습니다.';
+    }
+    return null;
+  })();
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 border-b border-neutral-200 bg-white px-7 pb-0 pt-5">
+        <div className="mb-3 flex items-center gap-1.5 text-xs text-neutral-400">
+          <span>홈</span>
+          <span className="text-neutral-300">›</span>
+          <span className="text-neutral-700">계약서</span>
+        </div>
+        <div className="flex items-center gap-3 pb-4">
+          <h1 className="text-xl font-bold text-neutral-900">계약서 목록</h1>
+          <div className="ml-auto flex gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="14" y2="12" />
+                <line x1="4" y1="18" x2="10" y2="18" />
+              </svg>
+              필터
+            </button>
+            <button
+              type="button"
+              onClick={() => showEditorTemplatePicker()}
+              className="inline-flex items-center gap-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              새 계약서
+            </button>
+          </div>
+        </div>
+        <div className="-mx-7 flex gap-0 border-t border-neutral-200 px-7">
+          {LIST_TABS.map((t) => {
+            const active = listTab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setListTab(t.id)}
+                className={`mb-[-1px] border-b-2 px-4 py-2.5 text-[13px] font-medium transition-colors ${
+                  active
+                    ? 'border-primary-800 font-semibold text-primary-800'
+                    : 'border-transparent text-neutral-500 hover:text-neutral-900'
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex-1 px-7 py-6">
+        <div className="mb-4 flex flex-wrap items-center gap-2.5">
+          <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" aria-hidden>
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-neutral-700 outline-none"
+              placeholder="계약서명, 고객사, 유형으로 검색..."
+            />
+          </div>
+          <select className="rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-[13px] text-neutral-700">
+            <option>수정일 최신순</option>
+            <option>이름순</option>
+            <option>상태순</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void refreshDrafts()}
+            className="rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-[13px] text-neutral-700 hover:bg-neutral-50"
+          >
+            목록 새로고침
+          </button>
+        </div>
+        <div className="overflow-hidden rounded-[10px] border border-neutral-200 bg-white">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                {[
+                  '계약서명',
+                  '유형',
+                  '상태',
+                  '버전',
+                  '수정일',
+                  '저장 요약',
+                  '검토/승인',
+                  '작성자',
+                  '액션',
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-400"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="border-b border-neutral-100 px-4 py-12 text-center text-[13px] text-neutral-500"
+                  >
+                    저장된 초안을 불러오는 중…
+                  </td>
+                </tr>
+              ) : emptyMessage ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="border-b border-neutral-100 px-4 py-12 text-center text-[13px] text-neutral-500"
+                  >
+                    {emptyMessage}
+                  </td>
+                </tr>
+              ) : (
+                visibleDrafts.map((d) => {
+                  const author = d.auditEntries[0]?.author ?? '—';
+                  const st = listStatusLabel(d);
+                  const isApproved = (d.reviewStatus ?? 'pending') === 'approved';
+                  return (
+                    <tr key={d.id} className="hover:bg-neutral-50">
+                      <td className="max-w-[200px] border-b border-neutral-100 px-4 py-3">
+                        <div className="truncate text-[13px] font-medium text-neutral-900" title={draftDisplayName(d)}>
+                          {draftDisplayName(d)}
+                        </div>
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
+                        {d.templateLabel || '—'}
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${st.className}`}
+                        >
+                          {st.label}
+                        </span>
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
+                        {d.displayVer}
+                      </td>
+                      <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 text-[12px] text-neutral-500">
+                        {formatUpdatedAt(d.updatedAt)}
+                      </td>
+                      <td className="max-w-[min(360px,40vw)] border-b border-neutral-100 px-4 py-3">
+                        <p
+                          className="line-clamp-2 text-[12px] leading-snug text-neutral-600"
+                          title={summarizeDraftBodyPreview(d, 500)}
+                        >
+                          {summarizeDraftBodyPreview(d)}
+                        </p>
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-md border px-2 py-1 text-[12px] font-medium ${reviewApprovalBadgeClass(
+                            d.reviewStatus ?? 'pending',
+                          )}`}
+                          title="계약서 목록에서는 검토/승인 상태를 수정할 수 없습니다. 검토 화면에서 변경하세요."
+                        >
+                          {REVIEW_OPTIONS.find(
+                            (o) => o.value === (d.reviewStatus ?? 'pending'),
+                          )?.label ?? '대기'}
+                        </span>
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3 text-[12px] text-neutral-500">
+                        {author}
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isApproved) {
+                                openReviewDraft(d);
+                                return;
+                              }
+                              loadStoredDraft(d);
+                            }}
+                            className="rounded-md border border-primary-300 bg-white px-2.5 py-1 text-xs font-medium text-primary-800 hover:bg-primary-50"
+                          >
+                            {isApproved ? '검토에서 열기' : '작성에서 열기'}
+                          </button>
+                          {d.archived ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const ok = await patchDraft(d.id, {
+                                  archived: false,
+                                });
+                                if (ok) {
+                                  showToast('보관을 해제했습니다', 'success');
+                                  void refreshDrafts();
+                                }
+                              }}
+                              className="rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                            >
+                              보관 해제
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const ok = await patchDraft(d.id, {
+                                  archived: true,
+                                });
+                                if (ok) {
+                                  showToast('보관했습니다', 'success');
+                                  void refreshDrafts();
+                                }
+                              }}
+                              className="rounded-md border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                            >
+                              보관
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계약서 매트릭스 — ContractOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #F8FAFC;
+  --surface:   #FFFFFF;
+  --border:    #E2E8F0;
+  --border2:   #CBD5E1;
+  --text:      #0F172A;
+  --text2:     #475569;
+  --text3:     #94A3B8;
+  --blue:      #1E40AF;
+  --blue-lt:   #DBEAFE;
+  --blue-mid:  #3B82F6;
+  --red:       #B91C1C;
+  --red-lt:    #FEE2E2;
+  --amber:     #B45309;
+  --amber-lt:  #FEF3C7;
+  --green:     #15803D;
+  --green-lt:  #DCFCE7;
+  --purple:    #6D28D9;
+  --purple-lt: #EDE9FE;
+  --slate:     #334155;
+  --slate-lt:  #F1F5F9;
+  --sidebar:   240px;
+  --topbar:    56px;
+  --radius:    8px;
+  --radius-lg: 12px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans KR', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  height: var(--topbar);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 24px; gap: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.05);
+}
+.logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+.logo-mark {
+  width: 30px; height: 30px; border-radius: 7px;
+  background: var(--blue);
+  display: flex; align-items: center; justify-content: center;
+}
+.logo-mark svg { width: 16px; height: 16px; fill: white; }
+.logo-text { font-size: 14px; font-weight: 700; color: var(--blue); letter-spacing: -.3px; }
+.logo-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+.logo-sub { font-size: 13px; color: var(--text2); font-weight: 500; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px 4px 6px;
+  border: 1px solid var(--border); border-radius: 20px;
+  background: var(--surface); cursor: pointer;
+  font-size: 12px; color: var(--text2); font-weight: 500;
+}
+.chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+/* ── LAYOUT ── */
+.layout { display: flex; min-height: calc(100vh - var(--topbar)); }
+
+/* ── SIDEBAR ── */
+.sidebar {
+  width: var(--sidebar); flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 0;
+  position: sticky; top: var(--topbar);
+  height: calc(100vh - var(--topbar));
+  overflow-y: auto;
+}
+.sidebar-section { padding: 0 12px; margin-bottom: 6px; }
+.sidebar-label {
+  font-size: 10px; font-weight: 600; color: var(--text3);
+  letter-spacing: .08em; text-transform: uppercase;
+  padding: 8px 8px 4px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: 7px;
+  cursor: pointer; font-size: 13px; color: var(--text2);
+  transition: all .12s; margin-bottom: 1px;
+}
+.nav-item:hover { background: var(--slate-lt); color: var(--text); }
+.nav-item.active {
+  background: var(--blue-lt); color: var(--blue);
+  font-weight: 600; border-right: 2px solid var(--blue);
+  margin-right: -1px;
+}
+.nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+.nav-cnt {
+  margin-left: auto; font-size: 10px; font-weight: 700;
+  background: var(--red); color: white;
+  border-radius: 10px; padding: 1px 6px;
+}
+.nav-cnt2 { margin-left: auto; font-size: 11px; color: var(--text3); }
+
+/* ── MAIN ── */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* ── PAGE HEADER ── */
+.page-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 20px 28px 0;
+}
+.breadcrumb {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text3); margin-bottom: 12px;
+}
+.breadcrumb .sep { color: var(--border2); }
+.breadcrumb .cur { color: var(--text2); }
+.page-title-row {
+  display: flex; align-items: flex-end; gap: 12px;
+  padding-bottom: 16px;
+}
+.page-title { font-size: 20px; font-weight: 700; letter-spacing: -.4px; color: var(--text); }
+.page-desc { font-size: 13px; color: var(--text3); margin-bottom: 4px; }
+.page-tabs { display: flex; margin: 0 -28px; padding: 0 28px; }
+.tab {
+  padding: 9px 16px; font-size: 13px; font-weight: 500;
+  color: var(--text3); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: all .15s; white-space: nowrap;
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
+.tab .tab-cnt {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  background: var(--slate-lt); color: var(--text2);
+  border-radius: 10px; font-size: 10px; font-weight: 700;
+  margin-left: 6px;
+}
+.tab.active .tab-cnt { background: var(--blue-lt); color: var(--blue); }
+
+/* ── CONTENT ── */
+.content { padding: 24px 28px; flex: 1; }
+
+/* ── FILTER BAR ── */
+.filter-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.filter-row:last-child { margin-bottom: 0; }
+.filter-label { font-size: 12px; font-weight: 600; color: var(--text2); min-width: 52px; }
+.filter-divider { height: 20px; width: 1px; background: var(--border); margin: 0 4px; }
+
+.fsel {
+  appearance: none;
+  background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") no-repeat right 8px center;
+  border: 1px solid var(--border2); border-radius: 7px;
+  padding: 6px 28px 6px 10px;
+  font-size: 13px; font-family: inherit; color: var(--text);
+  cursor: pointer; transition: border-color .15s;
+}
+.fsel:focus { outline: none; border-color: var(--blue-mid); box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+.fsel:hover { border-color: var(--border2); }
+
+.search-wrap {
+  flex: 1; min-width: 200px; max-width: 360px;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--border2);
+  border-radius: 7px; padding: 0 12px; height: 34px;
+  transition: border-color .15s;
+}
+.search-wrap:focus-within { border-color: var(--blue-mid); box-shadow: 0 0 0 3px rgba(59,130,246,.1); background: var(--surface); }
+.search-wrap input {
+  border: none; outline: none; background: transparent;
+  font-size: 13px; font-family: inherit; color: var(--text);
+  flex: 1; min-width: 0;
+}
+.search-wrap input::placeholder { color: var(--text3); }
+
+.result-cnt { margin-left: auto; font-size: 12px; color: var(--text3); white-space: nowrap; }
+
+/* ── TAG FILTERS ── */
+.tag-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tag-group-label { font-size: 11px; color: var(--text3); margin-right: 2px; }
+.tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px;
+  border: 1px solid var(--border2);
+  background: var(--surface); color: var(--text2);
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  transition: all .15s; user-select: none;
+}
+.tag:hover { border-color: var(--border2); background: var(--slate-lt); }
+.tag.on { background: var(--blue-lt); color: var(--blue); border-color: #93C5FD; font-weight: 600; }
+.tag-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+/* ── TABLE ── */
+.table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+colgroup col:nth-child(1) { width: 72px; }
+colgroup col:nth-child(2) { width: 78px; }
+colgroup col:nth-child(3) { width: 158px; }
+colgroup col:nth-child(4) { width: 172px; }
+colgroup col:nth-child(5) { width: auto; }
+
+thead tr { background: var(--bg); }
+th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px; font-weight: 600;
+  color: var(--text3);
+  letter-spacing: .05em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+th:last-child { border-right: none; }
+
+td {
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  vertical-align: top;
+}
+td:last-child { border-right: none; }
+tr:last-child td { border-bottom: none; }
+tr.hidden { display: none; }
+
+.td-inner { padding: 10px 14px; }
+.genre-cell {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  writing-mode: horizontal-tb;
+}
+.genre-badge {
+  display: inline-block;
+  padding: 3px 8px; border-radius: 5px;
+  font-size: 12px; font-weight: 600;
+}
+.gb-edutain { background: #EDE9FE; color: #5B21B6; }
+.gb-variety  { background: #FEF3C7; color: #92400E; }
+.gb-drama    { background: #DCFCE7; color: #166534; }
+
+.type-cell { font-size: 12px; color: var(--text2); }
+
+.party-cell { font-size: 13px; }
+.party-highlight { color: var(--red); font-weight: 600; }
+
+/* ── Contract badges ── */
+.doc-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 5px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.db-협찬   { background: var(--blue-lt);   color: var(--blue); }
+.db-대행   { background: var(--slate-lt);  color: var(--slate); }
+.db-마케팅 { background: var(--amber-lt);  color: var(--amber); }
+.db-정부   { background: var(--green-lt);  color: var(--green); }
+.db-기타   { background: var(--slate-lt);  color: var(--text3); }
+
+/* ── Function list ── */
+.func-list {
+  list-style: none; padding: 0; margin: 0;
+  font-size: 12px; color: var(--text2); line-height: 1.75;
+}
+.func-list li { display: flex; gap: 6px; }
+.func-list li::before { content: "·"; color: var(--text3); flex-shrink: 0; }
+.func-empty { font-size: 12px; color: var(--text3); }
+
+/* ── Row hover ── */
+tbody tr:not(.group-row):hover td { background: #F8FAFC; }
+
+/* ── Group separator ── */
+.group-row td {
+  padding: 0;
+  border-bottom: 2px solid var(--border2) !important;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  display: none; text-align: center;
+  padding: 48px 24px; color: var(--text3);
+}
+.empty-state svg { width: 36px; height: 36px; margin-bottom: 12px; opacity: .4; }
+.empty-state p { font-size: 14px; }
+
+/* ── Clear btn ── */
+.btn-clear {
+  font-size: 12px; color: var(--blue); cursor: pointer;
+  text-decoration: underline; border: none; background: none;
+  font-family: inherit; padding: 0;
+}
+.btn-clear:hover { color: var(--blue); opacity: .75; }
+
+/* ── Export btn ── */
+.btn-export {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 7px;
+  border: 1px solid var(--border2);
+  background: var(--surface); color: var(--text2);
+  font-size: 13px; font-weight: 500; font-family: inherit;
+  cursor: pointer; transition: all .15s;
+}
+.btn-export:hover { background: var(--slate-lt); }
+.btn-export svg { width: 14px; height: 14px; }
+
+/* ── Tooltip ── */
+.has-tooltip { position: relative; cursor: help; }
+.tooltip {
+  position: absolute; left: 100%; top: 50%; transform: translateY(-50%);
+  margin-left: 8px; z-index: 100;
+  background: var(--text); color: white;
+  font-size: 11px; line-height: 1.5;
+  padding: 7px 10px; border-radius: 6px;
+  white-space: nowrap; max-width: 260px; white-space: normal;
+  pointer-events: none; opacity: 0; transition: opacity .15s;
+  box-shadow: 0 4px 12px rgba(0,0,0,.2);
+  width: 240px;
+}
+.has-tooltip:hover .tooltip { opacity: 1; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 10px; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <a class="logo" href="#">
+    <div class="logo-mark">
+      <svg viewBox="0 0 16 16"><path d="M4 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H4z"/><path d="M5 6h6v1H5V6zm0 2.5h6v1H5v-1zm0 2.5h4v1H5V11z"/></svg>
+    </div>
+    <span class="logo-text">ContractOS</span>
+  </a>
+  <div class="logo-sep"></div>
+  <span class="logo-sub">계약서 매트릭스</span>
+  <div class="topbar-right">
+    <div class="chip"><div class="chip-dot"></div> 박성현 (Admin)</div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        대시보드
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        계약서
+        <span class="nav-cnt2">24</span>
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        검토 요청
+        <span class="nav-cnt">3</span>
+      </div>
+    </div>
+    <div class="sidebar-section" style="margin-top:8px">
+      <div class="sidebar-label">어드민</div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        템플릿 관리
+      </div>
+      <div class="nav-item active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17H5a2 2 0 0 0-2 2v0a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v0a2 2 0 0 0-2-2h-4"/><rect x="9" y="3" width="6" height="14" rx="1"/></svg>
+        계약 매트릭스
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        사용자 관리
+      </div>
+      <div class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+        시스템 설정
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- PAGE HEADER -->
+    <div class="page-header">
+      <div class="breadcrumb">
+        <span>어드민</span>
+        <span class="sep">›</span>
+        <span class="cur">계약 매트릭스</span>
+      </div>
+      <div class="page-title-row">
+        <div>
+          <div class="page-title">계약 매트릭스</div>
+        </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <button class="btn-export">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            내보내기
+          </button>
+        </div>
+      </div>
+      <div class="page-tabs">
+        <div class="tab active">전체 매트릭스 <span class="tab-cnt" id="total-cnt">12</span></div>
+        <div class="tab">교양 <span class="tab-cnt">6</span></div>
+        <div class="tab">예능 <span class="tab-cnt">5</span></div>
+        <div class="tab">드라마 <span class="tab-cnt">1</span></div>
+      </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="content">
+
+      <!-- FILTER BAR -->
+      <div class="filter-bar">
+        <div class="filter-row">
+          <span class="filter-label">필터</span>
+          <select class="fsel" id="sel-genre" onchange="applyFilter()">
+            <option value="">장르 전체</option>
+            <option value="교양">교양</option>
+            <option value="예능">예능</option>
+            <option value="드라마">드라마</option>
+          </select>
+          <select class="fsel" id="sel-type" onchange="applyFilter()">
+            <option value="">계약형태 전체</option>
+            <option value="2자">2자</option>
+            <option value="위수탁">위수탁</option>
+            <option value="언진">언진</option>
+            <option value="<1>">&lt;1&gt;</option>
+            <option value="<2>">&lt;2&gt;</option>
+          </select>
+          <select class="fsel" id="sel-doc" onchange="applyFilter()">
+            <option value="">계약서 유형 전체</option>
+            <option value="협찬">협찬 계약서</option>
+            <option value="마케팅">마케팅 라이선스</option>
+            <option value="대행">대행 계약서</option>
+            <option value="정부">정부 약정서</option>
+          </select>
+          <div class="filter-divider"></div>
+          <div class="search-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input id="search" type="text" placeholder="계약 구분, 기능 키워드 검색..." oninput="applyFilter()">
+          </div>
+          <span class="result-cnt" id="result-cnt"></span>
+          <button class="btn-clear" onclick="clearAll()">초기화</button>
+        </div>
+
+        <div class="filter-row" style="margin-bottom:0">
+          <span class="filter-label" style="font-size:11px;color:var(--text3)">계약 구분</span>
+          <div class="tag-row" id="tag-row">
+            <div class="tag on" data-tag="SBS-광고주" onclick="toggleTag(this)"><div class="tag-dot" style="background:#3B82F6"></div>SBS-광고주</div>
+            <div class="tag on" data-tag="SBS-MC"    onclick="toggleTag(this)"><div class="tag-dot" style="background:#0F766E"></div>SBS-MC</div>
+            <div class="tag on" data-tag="MC-협찬주"  onclick="toggleTag(this)"><div class="tag-dot" style="background:#B91C1C"></div>MC-협찬주</div>
+            <div class="tag on" data-tag="SBS-협찬주" onclick="toggleTag(this)"><div class="tag-dot" style="background:#B45309"></div>SBS-협찬주</div>
+            <div class="tag on" data-tag="SBS-언진"   onclick="toggleTag(this)"><div class="tag-dot" style="background:#15803D"></div>SBS-언진</div>
+            <div class="tag on" data-tag="SBS-협찬주-MC" onclick="toggleTag(this)"><div class="tag-dot" style="background:#6D28D9"></div>SBS-협찬주-MC</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLE -->
+      <div class="table-wrap">
+        <table>
+          <colgroup>
+            <col><col><col><col><col>
+          </colgroup>
+          <thead>
+            <tr>
+              <th>장르</th>
+              <th>계약형태</th>
+              <th>계약 구분</th>
+              <th>필요 계약서</th>
+              <th>필요 기능</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty-state" id="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <p>조건에 맞는 항목이 없습니다.</p>
+          <p style="margin-top:4px;font-size:12px"><button class="btn-clear" onclick="clearAll()">필터 초기화</button></p>
+        </div>
+      </div>
+
+    </div><!-- .content -->
+  </main>
+</div>
+
+<script>
+const DATA = [
+  {
+    genre:"교양", gbClass:"gb-edutain",
+    type:"2자",
+    party:"SBS - 광고주/대행사", partyHL:true,
+    doc:"협찬약정서", docClass:"db-협찬",
+    funcs:[
+      "입력값(광고주명/체크박스) → 자동 계약서 초안 생성",
+      "협찬 계약서 → 대행 계약서로 변환"
+    ],
+    tags:["SBS-광고주"],
+    docKey:"협찬"
+  },
+  {
+    genre:"교양", gbClass:"gb-edutain",
+    type:"2자",
+    party:"SBS - MC", partyHL:false,
+    doc:"대행약정서 (생략중)", docClass:"db-대행",
+    funcs:[],
+    tags:["SBS-MC"],
+    docKey:"대행"
+  },
+  {
+    genre:"교양", gbClass:"gb-edutain",
+    type:"위수탁",
+    party:"MC - 협찬주", partyHL:true,
+    doc:"협찬계약서", docClass:"db-협찬",
+    funcs:["광고주 or 대행사 법인명 자동 입력"],
+    tags:["MC-협찬주"],
+    docKey:"협찬"
+  },
+  {
+    genre:"교양", gbClass:"gb-edutain",
+    type:"위수탁",
+    party:"SBS - MC", partyHL:false,
+    doc:"협찬계약서", docClass:"db-협찬",
+    funcs:[],
+    tags:["SBS-MC"],
+    docKey:"협찬"
+  },
+  {
+    genre:"교양", gbClass:"gb-edutain",
+    type:"언진",
+    party:"SBS - 언진", partyHL:false,
+    doc:"정부 약정서", docClass:"db-정부",
+    funcs:["정부 계약 연동 여부 확인 필요"],
+    tags:["SBS-언진"],
+    docKey:"정부"
+  },
+  {
+    genre:"교양", gbClass:"gb-edutain",
+    type:"언진",
+    party:"SBS - MC", partyHL:false,
+    doc:"대행계약서", docClass:"db-대행",
+    funcs:[],
+    tags:["SBS-MC"],
+    docKey:"대행"
+  },
+  {
+    genre:"예능", gbClass:"gb-variety",
+    type:"<1>",
+    party:"MC - 협찬주", partyHL:true,
+    doc:"마케팅 라이선스 패키지", docClass:"db-마케팅",
+    funcs:[
+      "광고주 or 대행사 법인명 자동 입력",
+      "판매솔루션(간접가상협찬 등) 및 금액 입력",
+      "대행수수료 — 협찬은 유동적, 일반은 고정",
+      "세금계산서 발행 일정 및 위수탁·양자발행·직거래 여부",
+      "입금 일정 및 날짜 자동 수정",
+      "메소디아 청약 내용 입력 (간접가상일반 포함 시)",
+      "MC-대행사 or 광고주 와의 조항 포함"
+    ],
+    tags:["MC-협찬주"],
+    docKey:"마케팅"
+  },
+  {
+    genre:"예능", gbClass:"gb-variety",
+    type:"<1>",
+    party:"SBS - MC", partyHL:false,
+    doc:"마케팅 라이선스 패키지", docClass:"db-마케팅",
+    funcs:["MC-대행사 or 광고주 와의 조항 포함"],
+    tags:["SBS-MC"],
+    docKey:"마케팅"
+  },
+  {
+    genre:"예능", gbClass:"gb-variety",
+    type:"<2>",
+    party:"SBS - 협찬주", partyHL:false,
+    doc:"마케팅 라이선스 패키지", docClass:"db-마케팅",
+    funcs:[],
+    tags:["SBS-협찬주"],
+    docKey:"마케팅"
+  },
+  {
+    genre:"예능", gbClass:"gb-variety",
+    type:"<2>",
+    party:"SBS - MC", partyHL:false,
+    doc:"마케팅 라이선스 패키지", docClass:"db-마케팅",
+    funcs:[],
+    tags:["SBS-MC"],
+    docKey:"마케팅"
+  },
+  {
+    genre:"예능", gbClass:"gb-variety",
+    type:"<2>",
+    party:"SBS - 협찬주 - MC", partyHL:false,
+    doc:"마케팅 라이선스 패키지", docClass:"db-마케팅",
+    funcs:["3자 계약 구조 처리"],
+    tags:["SBS-협찬주-MC"],
+    docKey:"마케팅"
+  },
+  {
+    genre:"드라마", gbClass:"gb-drama",
+    type:"—",
+    party:"—", partyHL:false,
+    doc:"추후 정의", docClass:"db-기타",
+    funcs:["계약 유형 정의 예정"],
+    tags:[],
+    docKey:""
+  },
+];
+
+let activeTags = new Set(["SBS-광고주","SBS-MC","MC-협찬주","SBS-협찬주","SBS-언진","SBS-협찬주-MC"]);
+
+function toggleTag(el) {
+  const tag = el.dataset.tag;
+  if (activeTags.has(tag)) { activeTags.delete(tag); el.classList.remove('on'); }
+  else { activeTags.add(tag); el.classList.add('on'); }
+  applyFilter();
+}
+
+function clearAll() {
+  document.getElementById('sel-genre').value = '';
+  document.getElementById('sel-type').value = '';
+  document.getElementById('sel-doc').value = '';
+  document.getElementById('search').value = '';
+  activeTags = new Set(["SBS-광고주","SBS-MC","MC-협찬주","SBS-협찬주","SBS-언진","SBS-협찬주-MC"]);
+  document.querySelectorAll('.tag').forEach(t => t.classList.add('on'));
+  applyFilter();
+}
+
+function applyFilter() {
+  const genre  = document.getElementById('sel-genre').value;
+  const type   = document.getElementById('sel-type').value;
+  const docKey = document.getElementById('sel-doc').value;
+  const q      = document.getElementById('search').value.toLowerCase().trim();
+
+  const rows = document.querySelectorAll('#tbody tr[data-idx]');
+  let vis = 0;
+
+  rows.forEach(row => {
+    const idx   = +row.dataset.idx;
+    const d     = DATA[idx];
+    const tags  = d.tags;
+    const matchTag  = tags.length === 0 || tags.some(t => activeTags.has(t));
+    const matchGenre = !genre  || d.genre === genre;
+    const matchType  = !type   || d.type  === type;
+    const matchDoc   = !docKey || d.docKey.includes(docKey);
+    const searchTxt  = `${d.genre} ${d.type} ${d.party} ${d.doc} ${d.funcs.join(' ')}`.toLowerCase();
+    const matchQ     = !q || searchTxt.includes(q);
+
+    const show = matchTag && matchGenre && matchType && matchDoc && matchQ;
+    row.classList.toggle('hidden', !show);
+    if (show) vis++;
+  });
+
+  document.getElementById('result-cnt').textContent = `${vis}건 표시`;
+  document.getElementById('total-cnt').textContent  = vis;
+  document.getElementById('empty-state').style.display = vis === 0 ? 'block' : 'none';
+
+  // genre group separators
+  document.querySelectorAll('tr.group-sep').forEach(r => {
+    const g = r.dataset.genre;
+    const any = [...document.querySelectorAll(`#tbody tr[data-genre="${g}"]`)]
+      .some(r => !r.classList.contains('hidden'));
+    r.classList.toggle('hidden', !any);
+  });
+}
+
+function render() {
+  const tb = document.getElementById('tbody');
+  let html = '';
+  let prevGenre = '', prevType = '';
+
+  DATA.forEach((d, i) => {
+    const sameGenre = d.genre === prevGenre;
+    const sameType  = d.type  === prevType && sameGenre;
+
+    // genre separator row
+    if (!sameGenre && i > 0) {
+      html += `<tr class="group-sep hidden" data-genre="${d.genre}"><td colspan="5" style="padding:0;background:var(--border);height:2px;border:none"></td></tr>`;
+    }
+
+    const genreCell = sameGenre
+      ? `<td data-field="genre"><div class="td-inner"></div></td>`
+      : `<td data-field="genre"><div class="td-inner"><span class="genre-badge ${d.gbClass}">${d.genre}</span></div></td>`;
+
+    const typeCell = sameType
+      ? `<td data-field="type"><div class="td-inner"></div></td>`
+      : `<td data-field="type"><div class="td-inner type-cell">${d.type}</div></td>`;
+
+    const partyCell = `<td data-field="party"><div class="td-inner party-cell ${d.partyHL ? 'party-highlight' : ''}">${d.party}</div></td>`;
+
+    const docCell = `<td data-field="doc"><div class="td-inner"><span class="doc-badge ${d.docClass}">${d.doc}</span></div></td>`;
+
+    const funcInner = d.funcs.length
+      ? `<ul class="func-list">${d.funcs.map(f => `<li>${f}</li>`).join('')}</ul>`
+      : `<span class="func-empty">—</span>`;
+    const funcCell = `<td data-field="funcs"><div class="td-inner">${funcInner}</div></td>`;
+
+    const tagStr = d.tags.join(',');
+    html += `<tr data-idx="${i}" data-genre="${d.genre}" data-type="${d.type}" data-tags="${tagStr}">${genreCell}${typeCell}${partyCell}${docCell}${funcCell}</tr>`;
+
+    prevGenre = d.genre;
+    prevType  = d.type;
+  });
+
+  tb.innerHTML = html;
+  applyFilter();
+}
+
+render();
+</script>
+</body>
+</html>
