@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listDrafts, patchDraft } from '../lib/contractDraftDb';
+import { deleteDraft, listDrafts, patchDraft } from '../lib/contractDraftDb';
 import {
   isDraftReviewApproved,
   matchesContractListTab,
@@ -12,6 +12,7 @@ import type {
 import { summarizeDraftBodyPreview } from '../lib/contractDraftSummary';
 import { draftBelongsToEmployee } from '../lib/draftOwnership';
 import { exportStoredDraftAsWordFile } from '../lib/persistContractDraft';
+import { canAccessUserManagement } from '../lib/userManagementPolicy';
 import { canPerformContractReviewByDepartment } from '../lib/versionReviewPolicy';
 import { useAppStore } from '../store/useAppStore';
 
@@ -97,6 +98,11 @@ export function ContractsPage() {
   const showToast = useAppStore((s) => s.showToast);
   const authEmployeeId = useAppStore((s) => s.authEmployeeId);
   const currentUserDepartment = useAppStore((s) => s.currentUserDepartment);
+  /** 사용자 관리와 동일: admin 사번 또는 경영지원팀 — 전체 초안 조회·삭제 */
+  const listAdminMode = canAccessUserManagement({
+    employeeId: authEmployeeId,
+    department: currentUserDepartment,
+  });
 
   /** 계약서 목록에서 승인 건을 검토 UI로 열 수 있는지(경영지원팀만) */
   const canOpenApprovedInReviewUi = canPerformContractReviewByDepartment(
@@ -105,6 +111,7 @@ export function ContractsPage() {
 
   const [drafts, setDrafts] = useState<StoredContractDraft[]>([]);
   const [wordExportingId, setWordExportingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [listTab, setListTab] = useState<ContractListTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,14 +134,17 @@ export function ContractsPage() {
     void refreshDrafts();
   }, [refreshDrafts]);
 
-  const myDrafts = useMemo(
-    () => drafts.filter((d) => draftBelongsToEmployee(d, authEmployeeId)),
-    [drafts, authEmployeeId],
+  const listedDrafts = useMemo(
+    () =>
+      listAdminMode
+        ? drafts
+        : drafts.filter((d) => draftBelongsToEmployee(d, authEmployeeId)),
+    [drafts, authEmployeeId, listAdminMode],
   );
 
   const tabFiltered = useMemo(
-    () => myDrafts.filter((d) => matchesContractListTab(d, listTab)),
-    [myDrafts, listTab],
+    () => listedDrafts.filter((d) => matchesContractListTab(d, listTab)),
+    [listedDrafts, listTab],
   );
 
   const visibleDrafts = useMemo(() => {
@@ -148,8 +158,10 @@ export function ContractsPage() {
   }, [tabFiltered, searchQuery]);
 
   const emptyMessage = (() => {
-    if (myDrafts.length === 0) {
-      return '현재 로그인한 계정으로 저장된 계약이 없습니다. 계약서 작성 화면에서 저장하면 여기에 표시됩니다.';
+    if (listedDrafts.length === 0) {
+      return listAdminMode
+        ? '저장된 계약 초안이 없습니다.'
+        : '현재 로그인한 계정으로 저장된 계약이 없습니다. 계약서 작성 화면에서 저장하면 여기에 표시됩니다.';
     }
     if (tabFiltered.length === 0) {
       const labels: Record<ContractListTab, string> = {
@@ -166,6 +178,44 @@ export function ContractsPage() {
     }
     return null;
   })();
+
+  const confirmDeleteDraft = useCallback(
+    (d: StoredContractDraft) => {
+      const name = draftDisplayName(d);
+      if (
+        !window.confirm(
+          `「${name}」 초안을 이 브라우저에 저장된 데이터에서 영구 삭제합니다. 복구할 수 없습니다. 계속할까요?`,
+        )
+      ) {
+        return;
+      }
+      void (async () => {
+        setDeletingId(d.id);
+        try {
+          const ok = await deleteDraft(d.id);
+          if (!ok) {
+            showToast('삭제할 초안을 찾을 수 없습니다', 'warning');
+            return;
+          }
+          const st = useAppStore.getState();
+          if (st.localDraftId === d.id) {
+            st.closeReviewDraft();
+            if (st.page === 'editor' || st.page === 'review') {
+              st.setPage('contracts');
+            }
+          }
+          showToast(`삭제했습니다 · ${name}`, 'success');
+          void refreshDrafts();
+        } catch (e) {
+          console.error(e);
+          showToast('삭제에 실패했습니다', 'warning');
+        } finally {
+          setDeletingId((cur) => (cur === d.id ? null : cur));
+        }
+      })();
+    },
+    [refreshDrafts, showToast],
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -202,6 +252,12 @@ export function ContractsPage() {
             </button>
           </div>
         </div>
+        {listAdminMode ? (
+          <p className="mb-3 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-[12px] font-medium text-warning-900">
+            관리자 모드: 모든 계정의 저장 초안이 표시됩니다. 삭제한 항목은 이
+            브라우저에서 복구할 수 없습니다.
+          </p>
+        ) : null}
         <div className="-mx-7 flex gap-0 border-t border-neutral-200 px-7">
           {LIST_TABS.map((t) => {
             const active = listTab === t.id;
@@ -445,6 +501,16 @@ export function ContractsPage() {
                               보관
                             </button>
                           )}
+                          {listAdminMode ? (
+                            <button
+                              type="button"
+                              disabled={deletingId === d.id}
+                              onClick={() => confirmDeleteDraft(d)}
+                              className="rounded-md border border-danger-300 bg-white px-2.5 py-1 text-xs font-medium text-danger-800 hover:bg-danger-50 disabled:opacity-60"
+                            >
+                              {deletingId === d.id ? '삭제 중…' : '삭제'}
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

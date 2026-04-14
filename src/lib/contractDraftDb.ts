@@ -51,3 +51,12 @@ export async function patchDraft(
   await putDraft({ ...existing, ...patch });
   return true;
 }
+
+/** IndexedDB에서 초안 영구 삭제 */
+export async function deleteDraft(id: string): Promise<boolean> {
+  const db = await getDb();
+  const existing = await getDraft(id);
+  if (!existing) return false;
+  await db.delete(STORE, id);
+  return true;
+}

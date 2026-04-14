@@ -9,8 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "open": "open index.html",
-    "vercel:deploy": "vercel --prod",
-    "vercel:link": "vercel link"
+    "vercel:deploy": "npx vercel --prod --yes",
+    "vercel:link": "npx vercel link"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
