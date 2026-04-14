@@ -1,5 +1,13 @@
 import type { StoredContractDraft } from './contractDraftTypes';
 
+/**
+ * 검토/승인이 승인(approved)인지 — 대소문자·공백·비문자(JSON 등)도 허용
+ */
+export function isDraftReviewApproved(d: StoredContractDraft): boolean {
+  const raw = d.reviewStatus ?? 'pending';
+  return String(raw).trim().toLowerCase() === 'approved';
+}
+
 export type ContractListTab =
   | 'all'
   | 'draft'

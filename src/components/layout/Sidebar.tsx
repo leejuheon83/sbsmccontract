@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { PageId } from '../../store/useAppStore';
 import { useAppStore } from '../../store/useAppStore';
+import { canAccessUserManagement } from '../../lib/userManagementPolicy';
 import { MANAGEMENT_SUPPORT_DEPARTMENT } from '../../lib/userDepartments';
 
 const NAV_MAIN_BASE: {
@@ -76,6 +77,7 @@ function iconFor(page: PageId) {
 export function Sidebar() {
   const page = useAppStore((s) => s.page);
   const setPage = useAppStore((s) => s.setPage);
+  const authEmployeeId = useAppStore((s) => s.authEmployeeId);
   const currentUserDepartment = useAppStore((s) => s.currentUserDepartment);
 
   const navMain = useMemo(() => {
@@ -90,6 +92,18 @@ export function Sidebar() {
       ...NAV_MAIN_BASE.slice(idx + 1),
     ];
   }, [currentUserDepartment]);
+
+  const navAdmin = useMemo(() => {
+    if (
+      !canAccessUserManagement({
+        employeeId: authEmployeeId,
+        department: currentUserDepartment,
+      })
+    ) {
+      return NAV_ADMIN.filter((n) => n.page !== 'admin');
+    }
+    return NAV_ADMIN;
+  }, [authEmployeeId, currentUserDepartment]);
 
   const renderItem = (item: (typeof NAV_MAIN_BASE)[0]) => {
     const active = page === item.page;
@@ -125,7 +139,7 @@ export function Sidebar() {
         <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
           관리
         </div>
-        {NAV_ADMIN.map(renderItem)}
+        {navAdmin.map(renderItem)}
       </nav>
     </aside>
   );

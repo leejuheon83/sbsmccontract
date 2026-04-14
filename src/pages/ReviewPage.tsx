@@ -4,6 +4,8 @@ import type {
   ContractReviewStatus,
   StoredContractDraft,
 } from '../lib/contractDraftTypes';
+import { isDraftReviewApproved } from '../lib/contractListFilter';
+import { exportStoredDraftAsWordFile } from '../lib/persistContractDraft';
 import { summarizeDraftBodyPreview } from '../lib/contractDraftSummary';
 import { canPerformContractReviewByDepartment } from '../lib/versionReviewPolicy';
 import { MANAGEMENT_SUPPORT_DEPARTMENT } from '../lib/userDepartments';
@@ -39,6 +41,7 @@ function byUpdatedDesc(a: StoredContractDraft, b: StoredContractDraft): number {
 }
 
 export function ReviewPage() {
+  const [wordExportingId, setWordExportingId] = useState<string | null>(null);
   const openReviewDraft = useAppStore((s) => s.openReviewDraft);
   const editorMode = useAppStore((s) => s.editorMode);
   const activeTemplate = useAppStore((s) => s.activeTemplate);
@@ -227,13 +230,45 @@ export function ReviewPage() {
                       </select>
                     </td>
                     <td className="border-b border-neutral-100 px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => openReviewDraft(d)}
-                        className="rounded-md border border-primary-300 bg-white px-2.5 py-1 text-xs font-medium text-primary-800 hover:bg-primary-50"
-                      >
-                        검토로 열기
-                      </button>
+                      {isDraftReviewApproved(d) ? (
+                        <button
+                          type="button"
+                          data-contract-action="word-export"
+                          title="승인된 계약을 Word(.docx)로 내보냅니다"
+                          disabled={wordExportingId === d.id}
+                          onClick={() => {
+                            void (async () => {
+                              setWordExportingId(d.id);
+                              try {
+                                await exportStoredDraftAsWordFile(d);
+                              } catch (e) {
+                                console.error(e);
+                                showToast(
+                                  'Word 파일 만들기에 실패했습니다',
+                                  'warning',
+                                );
+                              } finally {
+                                setWordExportingId((cur) =>
+                                  cur === d.id ? null : cur,
+                                );
+                              }
+                            })();
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-success-600 bg-success-50 px-2.5 py-1 text-xs font-medium text-success-900 hover:bg-success-100 disabled:opacity-60"
+                        >
+                          {wordExportingId === d.id
+                            ? '만드는 중…'
+                            : 'Word로 내보내기'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openReviewDraft(d)}
+                          className="rounded-md border border-primary-300 bg-white px-2.5 py-1 text-xs font-medium text-primary-800 hover:bg-primary-50"
+                        >
+                          검토로 열기
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))

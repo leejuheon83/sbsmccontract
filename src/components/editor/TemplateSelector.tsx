@@ -3,6 +3,7 @@ import type { TemplateListItem } from '../../types/managedTemplate';
 import { useAppStore } from '../../store/useAppStore';
 import { useTemplateListStore } from '../../store/useTemplateListStore';
 import { listManagedCandidatesForSelection } from '../../lib/managedTemplateAdapter';
+import { isAdminOrManagementSupport } from '../../lib/userManagementPolicy';
 
 function toneToTemplateIcon(tone: TemplateListItem['tone']): {
   iconBg: string;
@@ -28,10 +29,21 @@ function toneToTemplateIcon(tone: TemplateListItem['tone']): {
  */
 export function TemplateSelector() {
   const selection = useAppStore((s) => s.selection);
+  const authEmployeeId = useAppStore((s) => s.authEmployeeId);
+  const currentUserDepartment = useAppStore((s) => s.currentUserDepartment);
   const openEditorFromManagedItem = useAppStore(
     (s) => s.openEditorFromManagedItem,
   );
   const managedItems = useTemplateListStore((s) => s.items);
+
+  const canManageTemplates = useMemo(
+    () =>
+      isAdminOrManagementSupport({
+        employeeId: authEmployeeId,
+        department: currentUserDepartment,
+      }),
+    [authEmployeeId, currentUserDepartment],
+  );
 
   const { genre, type, doc } = selection;
 
@@ -60,7 +72,9 @@ export function TemplateSelector() {
       <div className="flex flex-col gap-6 px-7 py-6">
         <section className="min-w-0 border-t border-neutral-200 pt-8">
           <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-            템플릿 관리 (업로드/저장)
+            {canManageTemplates
+              ? '템플릿 관리 (업로드/저장)'
+              : '템플릿 관리 (등록된 항목)'}
           </div>
 
           {filtered.length === 0 ? (

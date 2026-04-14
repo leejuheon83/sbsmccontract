@@ -177,9 +177,13 @@ export function EditTemplateModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 tablet:grid-cols-3">
-            <div className="flex flex-col gap-1">
-              <label htmlFor="et-link-genre" className="text-xs font-medium text-neutral-700">
+          <div className="-mx-1 grid grid-cols-1 gap-3 overflow-x-auto px-1 pb-0.5 tablet:grid-cols-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <label
+                htmlFor="et-link-genre"
+                className="whitespace-nowrap text-xs font-medium text-neutral-700"
+                title="편집기 연결 · 장르 (선택)"
+              >
                 편집기 연결 · 장르 (선택)
               </label>
               <select
@@ -195,8 +199,12 @@ export function EditTemplateModal({
                 ))}
               </select>
             </div>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="et-link-form" className="text-xs font-medium text-neutral-700">
+            <div className="flex min-w-0 flex-col gap-1">
+              <label
+                htmlFor="et-link-form"
+                className="whitespace-nowrap text-xs font-medium text-neutral-700"
+                title="편집기 연결 · 계약형태 (선택)"
+              >
                 편집기 연결 · 계약형태 (선택)
               </label>
               <select
@@ -214,8 +222,12 @@ export function EditTemplateModal({
                 ))}
               </select>
             </div>
-            <div className="flex flex-col gap-1">
-              <label htmlFor="et-link-doc" className="text-xs font-medium text-neutral-700">
+            <div className="flex min-w-0 flex-col gap-1">
+              <label
+                htmlFor="et-link-doc"
+                className="whitespace-nowrap text-xs font-medium text-neutral-700"
+                title="편집기 연결 · 계약서 유형 (선택)"
+              >
                 편집기 연결 · 계약서 유형 (선택)
               </label>
               <select

@@ -96,6 +96,84 @@ export function stripEditableHighlightMarkers(html: string): string {
   });
 }
 
+/** Word·편집기에서 흔한 연한 노랑/앰버 박스(패키지 정의 등) */
+export function hasPackBoxAppearance(el: HTMLElement): boolean {
+  if (hasYellowHighlight(el)) return true;
+  const style = (el.getAttribute('style') ?? '').toLowerCase();
+  if (
+    /background(?:-color)?\s*:\s*#(fff2cc|fef08a|fde68a|fef3c7|fff9c4|ffff99)\b/.test(
+      style,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /background(?:-color)?\s*:\s*rgb\(\s*255\s*,\s*242\s*,\s*204\s*\)/.test(style)
+  ) {
+    return true;
+  }
+  if (/border[^:]*:\s*[^;]*#ffc000\b/.test(style)) return true;
+  const cls = (el.getAttribute('class') ?? '').toLowerCase();
+  if (cls.includes('co-selectable-pack')) return true;
+  return false;
+}
+
+function nodeDepthWithin(el: HTMLElement, ancestor: HTMLElement): number {
+  let d = 0;
+  for (
+    let n: HTMLElement | null = el;
+    n && n !== ancestor;
+    n = n.parentElement
+  ) {
+    d += 1;
+  }
+  return d;
+}
+
+/**
+ * 조항 HTML에서 패키지·정의 박스로 보이는 블록에 클릭 선택용 마커를 붙입니다.
+ * 편집 화면에서만 사용하며, 원문 clause.body에는 저장하지 않습니다.
+ */
+export function injectSelectablePackMarkers(html: string): string {
+  const safe = sanitizeClauseHtml(html);
+  if (typeof DOMParser === 'undefined') return safe;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString('<body></body>', 'text/html');
+  const root = doc.createElement('div');
+  root.id = 'co-pack-root';
+  root.innerHTML = safe;
+  doc.body.appendChild(root);
+
+  const candidates = [...root.querySelectorAll('*')].filter(
+    (n): n is HTMLElement =>
+      n instanceof HTMLElement && hasPackBoxAppearance(n),
+  );
+  candidates.sort(
+    (a, b) => nodeDepthWithin(b, root) - nodeDepthWithin(a, root),
+  );
+
+  let idx = 0;
+  for (const el of candidates) {
+    if (el.hasAttribute('data-co-pack-id')) continue;
+    if (el.querySelector('[data-co-pack-id]')) continue;
+    el.setAttribute('data-co-pack-id', String(idx));
+    el.classList.add('co-selectable-pack');
+    const badge = doc.createElement('span');
+    badge.className = 'co-pack-order-num';
+    badge.setAttribute('aria-hidden', 'true');
+    el.insertBefore(badge, el.firstChild);
+    idx += 1;
+  }
+
+  return root.innerHTML;
+}
+
+export function countSelectablePackMarkers(html: string): number {
+  const marked = injectSelectablePackMarkers(html);
+  const m = marked.match(/\sdata-co-pack-id=/g);
+  return m?.length ?? 0;
+}
+
 export function htmlClauseToPlainText(html: string): string {
   const safe = sanitizeClauseHtml(html)
     .replace(/<br\s*\/?>/gi, '\n')

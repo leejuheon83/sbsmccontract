@@ -17,6 +17,12 @@ export class DuplicateEmailError extends Error {
   }
 }
 
+export class DuplicateEmployeeIdError extends Error {
+  constructor(employeeId: string) {
+    super(`Duplicate employeeId: ${employeeId}`);
+  }
+}
+
 export class NotFoundError extends Error {
   constructor(id: string) {
     super(`User not found: ${id}`);
@@ -28,8 +34,11 @@ export function addUser(users: User[], draft: UserDraft): User[] {
   if (users.some((u) => u.id === id)) {
     throw new DuplicateEmailError(draft.email);
   }
-  const next: User = { ...draft, id };
-  // 저장 계층이 아니라 UI용이므로, 최소 정규화만 적용
+  const empId = draft.employeeId.trim();
+  if (users.some((u) => u.employeeId === empId)) {
+    throw new DuplicateEmployeeIdError(empId);
+  }
+  const next: User = { ...draft, id, employeeId: empId };
   next.email = normalizeEmail(next.email);
   return [...users, next];
 }
@@ -51,11 +60,24 @@ export function updateUser(
     throw new DuplicateEmailError(nextEmail);
   }
 
+  const nextEmp =
+    patch.employeeId != null
+      ? patch.employeeId.trim()
+      : current.employeeId;
+  if (
+    users.some(
+      (u) => u.id !== id && u.employeeId === nextEmp,
+    )
+  ) {
+    throw new DuplicateEmployeeIdError(nextEmp);
+  }
+
   const merged: User = {
     ...current,
     ...patch,
     email: nextEmail,
     id: nextId,
+    employeeId: nextEmp,
   };
 
   const nextUsers = users.slice();
@@ -89,6 +111,7 @@ export function filterUsers(params: {
     return (
       u.name.toLowerCase().includes(q) ||
       u.email.toLowerCase().includes(q) ||
+      u.employeeId.toLowerCase().includes(q) ||
       u.department.toLowerCase().includes(q)
     );
   });

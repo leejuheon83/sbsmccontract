@@ -13,6 +13,7 @@ import {
   exportDraftAsWordFile,
   persistCurrentDraft,
 } from '../../lib/persistContractDraft';
+import { sendReviewRequestNotify } from '../../lib/notifyReviewRequest';
 
 function VersionTimeline() {
   const displayVer = useAppStore((s) => s.displayVer);
@@ -207,6 +208,7 @@ export function EditorWorkspace() {
   const [finalizeBusy, setFinalizeBusy] = useState(false);
   const [wordBusy, setWordBusy] = useState(false);
   const [reviewDecisionBusy, setReviewDecisionBusy] = useState(false);
+  const [reviewUndoBusy, setReviewUndoBusy] = useState(false);
   const templateListItems = useTemplateListStore((s) => s.items);
   const editorMode = useAppStore((s) => s.editorMode);
   const closeReviewDraft = useAppStore((s) => s.closeReviewDraft);
@@ -233,12 +235,13 @@ export function EditorWorkspace() {
   const setPage = useAppStore((s) => s.setPage);
   const currentUserDepartment = useAppStore((s) => s.currentUserDepartment);
   const appendAudit = useAppStore((s) => s.appendAudit);
+  const reviewApprovedReadOnly = useAppStore((s) => s.reviewApprovedReadOnly);
+  const authEmployeeId = useAppStore((s) => s.authEmployeeId);
 
   if (!activeTemplate) return null;
 
   const isReview = editorMode === 'review';
-  const displayTab =
-    !isReview && tab === 'ai' ? ('ver' as const) : tab;
+  const isReviewExportOnly = isReview && reviewApprovedReadOnly;
 
   const saveReviewDraft = async () => {
     setSaveBusy(true);
@@ -278,12 +281,58 @@ export function EditorWorkspace() {
       }
       appendAudit(status === 'approved' ? '검토 승인' : '검토 반려', status === 'approved' ? 'review_complete' : 'review_reject');
       showToast(status === 'approved' ? '승인 처리되었습니다' : '반려 처리되었습니다', status === 'approved' ? 'success' : 'warning');
-      closeReviewDraft();
+      if (status === 'approved') {
+        useAppStore.setState({
+          reviewApprovedReadOnly: true,
+          aiPanelVisible: false,
+        });
+      } else {
+        closeReviewDraft();
+      }
     } catch (e) {
       console.error(e);
       showToast('검토 상태 저장에 실패했습니다', 'warning');
     } finally {
       setReviewDecisionBusy(false);
+    }
+  };
+
+  const revertApprovedReview = async () => {
+    if (
+      !window.confirm(
+        '승인을 취소하고 검토 중 상태로 되돌릴까요? 목록에는 검토 중으로 표시됩니다.',
+      )
+    ) {
+      return;
+    }
+    setReviewUndoBusy(true);
+    try {
+      await persistCurrentDraft();
+      const id = useAppStore.getState().localDraftId;
+      if (!id) {
+        showToast('검토 대상 초안을 찾을 수 없습니다', 'warning');
+        return;
+      }
+      const ok = await patchDraft(id, {
+        reviewStatus: 'in_review',
+        updatedAt: new Date().toISOString(),
+      });
+      if (!ok) {
+        showToast('상태 저장에 실패했습니다', 'warning');
+        return;
+      }
+      useAppStore.setState({
+        reviewApprovedReadOnly: false,
+        aiPanelVisible: true,
+        editorBottomTab: 'ai',
+      });
+      appendAudit('승인 취소 · 검토 중으로 복귀', 'save');
+      showToast('검토 중 상태로 되돌렸습니다', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('승인 취소 처리에 실패했습니다', 'warning');
+    } finally {
+      setReviewUndoBusy(false);
     }
   };
 
@@ -349,9 +398,13 @@ export function EditorWorkspace() {
           </div>
           <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-600">
             <span className="h-[5px] w-[5px] rounded-full bg-neutral-400" />
-            {isReview ? '검토 열람' : '초안'}
+            {isReviewExportOnly
+              ? '승인 완료 · 열람'
+              : isReview
+                ? '검토 열람'
+                : '초안'}
           </span>
-          {isReview ? (
+          {isReview && !isReviewExportOnly ? (
             <span className="rounded-full border border-info-300 bg-info-50 px-2 py-0.5 text-[10px] font-semibold text-info-800">
               AI 검토·제안
             </span>
@@ -452,7 +505,7 @@ export function EditorWorkspace() {
                 </button>
               </>
             ) : null}
-            {isReview ? (
+            {isReview && !isReviewExportOnly ? (
               <>
                 <button
                   type="button"
@@ -479,6 +532,17 @@ export function EditorWorkspace() {
                   {reviewDecisionBusy ? '처리 중…' : '반려'}
                 </button>
               </>
+            ) : null}
+            {isReviewExportOnly ? (
+              <button
+                type="button"
+                disabled={reviewUndoBusy || wordBusy}
+                onClick={() => void revertApprovedReview()}
+                title="다시 눌러 승인을 취소하고 검토 중으로 되돌립니다"
+                className="inline-flex items-center gap-1 rounded-md border border-success-600 bg-success-100 px-2.5 py-1.5 text-xs font-semibold text-success-900 hover:bg-success-200 disabled:opacity-60"
+              >
+                {reviewUndoBusy ? '처리 중…' : '승인완료'}
+              </button>
             ) : null}
             <button
               type="button"
@@ -534,6 +598,14 @@ export function EditorWorkspace() {
                         await patchDraft(id, { reviewStatus: 'in_review' });
                       }
                       appendAudit('검토 요청(확정)', 'save');
+                      const notifyResult = await sendReviewRequestNotify({
+                        contractDocumentTitle,
+                        templateLabel: activeTemplate.label,
+                        submittedByEmployeeId: authEmployeeId,
+                      });
+                      if (notifyResult.ok && !notifyResult.skipped) {
+                        appendAudit('검토 요청 알림 메일 발송', 'export');
+                      }
                       if (
                         canPerformContractReviewByDepartment(
                           currentUserDepartment,
@@ -543,7 +615,19 @@ export function EditorWorkspace() {
                       } else {
                         setPage('contracts');
                       }
-                      showToast('검토 단계로 전달되었습니다', 'success');
+                      if (notifyResult.ok) {
+                        showToast(
+                          notifyResult.skipped
+                            ? '검토 단계로 전달되었습니다'
+                            : '검토 단계로 전달되었습니다. 경영지원팀에 알림 메일을 보냈습니다.',
+                          'success',
+                        );
+                      } else {
+                        showToast(
+                          `검토 단계로 전달되었습니다. 알림 메일 발송 실패: ${notifyResult.error}`,
+                          'warning',
+                        );
+                      }
                     } catch (e) {
                       console.error(e);
                       showToast('확정 처리에 실패했습니다', 'warning');
@@ -604,122 +688,133 @@ export function EditorWorkspace() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_360px]">
+      <div
+        className={`grid min-h-0 flex-1 grid-cols-1 overflow-hidden ${isReviewExportOnly ? '' : 'lg:grid-cols-[1fr_360px]'}`}
+      >
         <div className="min-h-0 overflow-y-auto p-5">
+          {isReviewExportOnly ? (
+            <p className="mb-4 rounded-md border border-success-200 bg-success-50 px-3 py-2 text-[12px] text-success-900">
+              이 계약은 승인이 완료되었습니다. 내용은 읽기 전용이며 Word 보내기만
+              할 수 있습니다. 상단 「승인완료」를 다시 누르면 검토 중으로 되돌릴 수
+              있습니다.
+            </p>
+          ) : null}
           {clauses.map((c, i) => (
             <ClauseBlock
               key={`${c.num}-${i}`}
               clause={c}
               index={i}
-              readOnly={false}
+              readOnly={isReviewExportOnly}
             />
           ))}
         </div>
+        {isReviewExportOnly ? null : (
         <div className="min-h-0 border-l border-neutral-200 bg-white">
-          <div className="flex border-b border-neutral-200">
-            {(isReview
-              ? (
+          {isReview ? (
+            <>
+              <div className="flex border-b border-neutral-200">
+                {(
                   [
                     ['ai', 'AI 검토·제안'],
                     ['ver', '버전 이력'],
                     ['audit', '감사 로그'],
                   ] as const
-                )
-              : (
-                  [
-                    ['ver', '버전 이력'],
-                    ['audit', '감사 로그'],
-                  ] as const
-                )
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                className={`flex-1 px-2 py-2.5 text-center text-xs font-medium transition-colors ${
-                  displayTab === id
-                    ? 'border-b-2 border-primary-800 font-semibold text-primary-800'
-                    : 'border-b-2 border-transparent text-neutral-500 hover:text-neutral-700'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="min-h-0 overflow-y-auto p-4">
-            {displayTab === 'ai' && isReview ? (
-              <>
-                {aiPanelVisible ? (
-                  <div className="mb-4 overflow-hidden rounded-[10px] border-[1.5px] border-info-300 bg-info-100">
-                    <div className="flex items-center gap-2 border-b border-info-300 px-4 py-3">
-                      <span className="rounded border border-info-300 bg-info-100 px-1.5 py-0.5 text-[11px] font-bold text-info-700">
-                        AI 검토
-                      </span>
-                      <span className="text-[13px] font-semibold text-neutral-900">
-                        {activeTemplate.aiSuggest.title}
-                      </span>
-                      <button
-                        type="button"
-                        className="ml-auto flex h-[22px] w-[22px] items-center justify-center rounded text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
-                        onClick={() => {
-                          hideAiPanel();
-                          if (isReview) setTab('ver');
-                        }}
-                        aria-label="닫기"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div className="px-4 py-3.5">
-                      <div className="mb-2.5 rounded-md border border-info-300 bg-white px-2.5 py-1.5 text-[11px] text-info-700">
-                        {activeTemplate.aiSuggest.reason}
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTab(id)}
+                    className={`flex-1 px-2 py-2.5 text-center text-xs font-medium transition-colors ${
+                      tab === id
+                        ? 'border-b-2 border-primary-800 font-semibold text-primary-800'
+                        : 'border-b-2 border-transparent text-neutral-500 hover:text-neutral-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="min-h-0 overflow-y-auto p-4">
+                {tab === 'ai' ? (
+                  <>
+                    {aiPanelVisible ? (
+                      <div className="mb-4 overflow-hidden rounded-[10px] border-[1.5px] border-info-300 bg-info-100">
+                        <div className="flex items-center gap-2 border-b border-info-300 px-4 py-3">
+                          <span className="rounded border border-info-300 bg-info-100 px-1.5 py-0.5 text-[11px] font-bold text-info-700">
+                            AI 검토
+                          </span>
+                          <span className="text-[13px] font-semibold text-neutral-900">
+                            {activeTemplate.aiSuggest.title}
+                          </span>
+                          <button
+                            type="button"
+                            className="ml-auto flex h-[22px] w-[22px] items-center justify-center rounded text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+                            onClick={() => {
+                              hideAiPanel();
+                              setTab('ver');
+                            }}
+                            aria-label="닫기"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="px-4 py-3.5">
+                          <div className="mb-2.5 rounded-md border border-info-300 bg-white px-2.5 py-1.5 text-[11px] text-info-700">
+                            {activeTemplate.aiSuggest.reason}
+                          </div>
+                          <p className="mb-3 max-h-20 overflow-hidden text-xs leading-relaxed text-neutral-700">
+                            {activeTemplate.aiSuggest.body}
+                          </p>
+                          <div className="mb-3 flex gap-1.5 rounded-md border border-warning-300 bg-warning-100 px-2.5 py-2 text-[11px] text-warning-700">
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              className="mt-0.5 shrink-0"
+                              aria-hidden
+                            >
+                              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                            </svg>
+                            AI 추천은 법적 조언이 아닙니다. 반드시 법무 검토 필요.
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={acceptAiSuggestion}
+                              className="flex-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
+                            >
+                              수락하여 삽입
+                            </button>
+                            <button
+                              type="button"
+                              onClick={rejectAiSuggestion}
+                              className="rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                            >
+                              거부
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <p className="mb-3 max-h-20 overflow-hidden text-xs leading-relaxed text-neutral-700">
-                        {activeTemplate.aiSuggest.body}
-                      </p>
-                      <div className="mb-3 flex gap-1.5 rounded-md border border-warning-300 bg-warning-100 px-2.5 py-2 text-[11px] text-warning-700">
-                        <svg
-                          width="13"
-                          height="13"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          className="mt-0.5 shrink-0"
-                          aria-hidden
-                        >
-                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                        </svg>
-                        AI 추천은 법적 조언이 아닙니다. 반드시 법무 검토 필요.
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={acceptAiSuggestion}
-                          className="flex-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
-                        >
-                          수락하여 삽입
-                        </button>
-                        <button
-                          type="button"
-                          onClick={rejectAiSuggestion}
-                          className="rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
-                        >
-                          거부
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                    ) : null}
+                    <p className="px-1 text-center text-[11px] text-neutral-500">
+                      템플릿 기준 추가 조항을 검토할 수 있습니다.
+                    </p>
+                  </>
                 ) : null}
-                <p className="px-1 text-center text-[11px] text-neutral-500">
-                  템플릿 기준 추가 조항을 검토할 수 있습니다.
-                </p>
-              </>
-            ) : null}
-            {displayTab === 'ver' ? <VersionTimeline /> : null}
-            {displayTab === 'audit' ? <AuditList /> : null}
-          </div>
+                {tab === 'ver' ? <VersionTimeline /> : null}
+                {tab === 'audit' ? <AuditList /> : null}
+              </div>
+            </>
+          ) : (
+            <div className="h-full min-h-0 overflow-y-auto p-4">
+              <AuditList />
+            </div>
+          )}
         </div>
+        )}
       </div>
     </div>
   );

@@ -52,6 +52,9 @@ Desktop.ini
 *.swo
 *~
 
+# Vercel (CLI 로컬 연동 메타)
+.vercel/
+
 # Vite
 .vite/
 

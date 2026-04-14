@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listDrafts, patchDraft } from '../lib/contractDraftDb';
 import {
+  isDraftReviewApproved,
   matchesContractListTab,
   type ContractListTab,
 } from '../lib/contractListFilter';
@@ -9,6 +10,9 @@ import type {
   StoredContractDraft,
 } from '../lib/contractDraftTypes';
 import { summarizeDraftBodyPreview } from '../lib/contractDraftSummary';
+import { draftBelongsToEmployee } from '../lib/draftOwnership';
+import { exportStoredDraftAsWordFile } from '../lib/persistContractDraft';
+import { canPerformContractReviewByDepartment } from '../lib/versionReviewPolicy';
 import { useAppStore } from '../store/useAppStore';
 
 function formatUpdatedAt(iso: string): string {
@@ -91,8 +95,16 @@ export function ContractsPage() {
   const loadStoredDraft = useAppStore((s) => s.loadStoredDraft);
   const openReviewDraft = useAppStore((s) => s.openReviewDraft);
   const showToast = useAppStore((s) => s.showToast);
+  const authEmployeeId = useAppStore((s) => s.authEmployeeId);
+  const currentUserDepartment = useAppStore((s) => s.currentUserDepartment);
+
+  /** 계약서 목록에서 승인 건을 검토 UI로 열 수 있는지(경영지원팀만) */
+  const canOpenApprovedInReviewUi = canPerformContractReviewByDepartment(
+    currentUserDepartment,
+  );
 
   const [drafts, setDrafts] = useState<StoredContractDraft[]>([]);
+  const [wordExportingId, setWordExportingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [listTab, setListTab] = useState<ContractListTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,9 +127,14 @@ export function ContractsPage() {
     void refreshDrafts();
   }, [refreshDrafts]);
 
+  const myDrafts = useMemo(
+    () => drafts.filter((d) => draftBelongsToEmployee(d, authEmployeeId)),
+    [drafts, authEmployeeId],
+  );
+
   const tabFiltered = useMemo(
-    () => drafts.filter((d) => matchesContractListTab(d, listTab)),
-    [drafts, listTab],
+    () => myDrafts.filter((d) => matchesContractListTab(d, listTab)),
+    [myDrafts, listTab],
   );
 
   const visibleDrafts = useMemo(() => {
@@ -131,8 +148,8 @@ export function ContractsPage() {
   }, [tabFiltered, searchQuery]);
 
   const emptyMessage = (() => {
-    if (drafts.length === 0) {
-      return '로컬에 저장된 계약 초안이 없습니다. 계약서 작성 화면에서 저장하면 여기에 표시됩니다. 상단의 새 계약서로 초안을 만들 수 있습니다.';
+    if (myDrafts.length === 0) {
+      return '현재 로그인한 계정으로 저장된 계약이 없습니다. 계약서 작성 화면에서 저장하면 여기에 표시됩니다.';
     }
     if (tabFiltered.length === 0) {
       const labels: Record<ContractListTab, string> = {
@@ -279,7 +296,10 @@ export function ContractsPage() {
                 visibleDrafts.map((d) => {
                   const author = d.auditEntries[0]?.author ?? '—';
                   const st = listStatusLabel(d);
-                  const isApproved = (d.reviewStatus ?? 'pending') === 'approved';
+                  /** 승인: API·저장값 + 목록 상태열「완료」와 동일 조건(둘 중 하나라도 맞으면 Word만) */
+                  const isApprovedRow =
+                    isDraftReviewApproved(d) ||
+                    (!d.archived && st.label === '완료');
                   return (
                     <tr key={d.id} className="hover:bg-neutral-50">
                       <td className="max-w-[200px] border-b border-neutral-100 px-4 py-3">
@@ -328,19 +348,70 @@ export function ContractsPage() {
                       </td>
                       <td className="border-b border-neutral-100 px-4 py-3">
                         <div className="flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (isApproved) {
-                                openReviewDraft(d);
-                                return;
-                              }
-                              loadStoredDraft(d);
-                            }}
-                            className="rounded-md border border-primary-300 bg-white px-2.5 py-1 text-xs font-medium text-primary-800 hover:bg-primary-50"
-                          >
-                            {isApproved ? '검토에서 열기' : '작성에서 열기'}
-                          </button>
+                          {isApprovedRow ? (
+                            <>
+                              <button
+                                type="button"
+                                title="승인된 계약을 Word(.docx)로 저장합니다"
+                                disabled={wordExportingId === d.id}
+                                onClick={() => {
+                                  void (async () => {
+                                    setWordExportingId(d.id);
+                                    try {
+                                      await exportStoredDraftAsWordFile(d);
+                                    } catch (e) {
+                                      console.error(e);
+                                      showToast(
+                                        'Word 파일 만들기에 실패했습니다',
+                                        'warning',
+                                      );
+                                    } finally {
+                                      setWordExportingId((cur) =>
+                                        cur === d.id ? null : cur,
+                                      );
+                                    }
+                                  })();
+                                }}
+                                className="inline-flex items-center gap-1 rounded-md border border-success-600 bg-success-50 px-2.5 py-1 text-xs font-medium text-success-900 hover:bg-success-100 disabled:opacity-60"
+                              >
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                aria-hidden
+                              >
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                                <line x1="16" y1="13" x2="8" y2="13" />
+                                <line x1="16" y1="17" x2="8" y2="17" />
+                              </svg>
+                              {wordExportingId === d.id
+                                ? '만드는 중…'
+                                : 'Word로 내보내기'}
+                            </button>
+                            {canOpenApprovedInReviewUi ? (
+                              <button
+                                type="button"
+                                title="검토 화면에서 열람·감사 로그를 확인합니다"
+                                onClick={() => openReviewDraft(d)}
+                                className="rounded-md border border-primary-300 bg-white px-2.5 py-1 text-xs font-medium text-primary-800 hover:bg-primary-50"
+                              >
+                                검토로 열기
+                              </button>
+                            ) : null}
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => loadStoredDraft(d)}
+                              className="rounded-md border border-primary-300 bg-white px-2.5 py-1 text-xs font-medium text-primary-800 hover:bg-primary-50"
+                            >
+                              작성에서 열기
+                            </button>
+                          )}
                           {d.archived ? (
                             <button
                               type="button"

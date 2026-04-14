@@ -1,8 +1,108 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { draftBelongsToEmployee } from '../lib/draftOwnership';
+import { listDrafts } from '../lib/contractDraftDb';
+import type { StoredContractDraft } from '../lib/contractDraftTypes';
+import { greetingFirstNameFromRegisteredName } from '../lib/userDisplayName';
 import { useAppStore } from '../store/useAppStore';
+
+function formatUpdatedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('ko-KR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function draftDisplayName(d: StoredContractDraft): string {
+  const t = d.contractDocumentTitle.trim();
+  if (t) return t;
+  return d.templateLabel.trim() || '제목 없음';
+}
+
+function isThisMonth(iso: string): boolean {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+}
+
+function listStatusLabel(
+  d: StoredContractDraft,
+): { label: string; className: string } {
+  if (d.archived) {
+    return { label: '보관', className: 'bg-neutral-200 text-neutral-700' };
+  }
+  switch (d.reviewStatus ?? 'pending') {
+    case 'in_review':
+      return { label: '검토 중', className: 'bg-info-100 text-info-800' };
+    case 'approved':
+      return { label: '완료', className: 'bg-success-100 text-success-800' };
+    case 'rejected':
+      return { label: '반려', className: 'bg-danger-100 text-danger-800' };
+    default:
+      return { label: '초안', className: 'bg-neutral-100 text-neutral-600' };
+  }
+}
 
 export function DashboardPage() {
   const setPage = useAppStore((s) => s.setPage);
   const showEditorTemplatePicker = useAppStore((s) => s.showEditorTemplatePicker);
+  const authEmployeeId = useAppStore((s) => s.authEmployeeId);
+  const authDisplayName = useAppStore((s) => s.authDisplayName);
+
+  const [drafts, setDrafts] = useState<StoredContractDraft[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refreshDrafts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await listDrafts();
+      list.sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+      setDrafts(list);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDrafts();
+  }, [refreshDrafts]);
+
+  const greetingName = useMemo(() => {
+    const n = authDisplayName?.trim();
+    if (n) return greetingFirstNameFromRegisteredName(n);
+    return authEmployeeId?.trim() || '사용자';
+  }, [authDisplayName, authEmployeeId]);
+
+  const myDrafts = useMemo(
+    () => drafts.filter((d) => draftBelongsToEmployee(d, authEmployeeId)),
+    [drafts, authEmployeeId],
+  );
+
+  const myTotal = myDrafts.length;
+  const myInReview = useMemo(
+    () =>
+      myDrafts.filter(
+        (d) => !d.archived && (d.reviewStatus ?? 'pending') === 'in_review',
+      ).length,
+    [myDrafts],
+  );
+  const myCompletedThisMonth = useMemo(
+    () =>
+      myDrafts.filter(
+        (d) =>
+          !d.archived &&
+          d.reviewStatus === 'approved' &&
+          isThisMonth(d.updatedAt),
+      ).length,
+    [myDrafts],
+  );
+
+  const recentMine = useMemo(() => myDrafts.slice(0, 5), [myDrafts]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -14,7 +114,7 @@ export function DashboardPage() {
         </div>
         <div className="flex items-center gap-3 pb-4">
           <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-            안녕하세요, 이주헌님 👋
+            안녕하세요, {greetingName}님 👋
           </h1>
           <div className="ml-auto flex gap-2">
             <button
@@ -78,9 +178,15 @@ export function DashboardPage() {
               내 계약서 (전체)
             </div>
             <div className="mb-1.5 text-[28px] font-bold leading-none tracking-tight text-neutral-900">
-              0
+              {loading ? '…' : myTotal}
             </div>
-            <div className="text-[11px] text-neutral-400">연동된 데이터가 없습니다</div>
+            <div className="text-[11px] text-neutral-400">
+              {loading
+                ? '불러오는 중…'
+                : myTotal === 0
+                  ? '저장한 내 계약이 없습니다'
+                  : '로그인 계정 기준으로 집계'}
+            </div>
           </div>
           <div className="rounded-[10px] border border-neutral-200 bg-white px-5 py-[18px] transition-shadow hover:shadow-md">
             <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-warning-100">
@@ -100,9 +206,13 @@ export function DashboardPage() {
             </div>
             <div className="mb-2 text-xs font-medium text-neutral-500">검토 대기</div>
             <div className="mb-1.5 text-[28px] font-bold leading-none text-warning-700">
-              0
+              {loading ? '…' : myInReview}
             </div>
-            <div className="text-[11px] text-neutral-400">대기 중인 건이 없습니다</div>
+            <div className="text-[11px] text-neutral-400">
+              {myInReview === 0 && !loading
+                ? '검토 중인 내 계약이 없습니다'
+                : '검토 중 상태 건수'}
+            </div>
           </div>
           <div className="rounded-[10px] border border-neutral-200 bg-white px-5 py-[18px] transition-shadow hover:shadow-md">
             <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-success-100">
@@ -121,9 +231,13 @@ export function DashboardPage() {
             </div>
             <div className="mb-2 text-xs font-medium text-neutral-500">이번 달 완료</div>
             <div className="mb-1.5 text-[28px] font-bold leading-none text-success-700">
-              0
+              {loading ? '…' : myCompletedThisMonth}
             </div>
-            <div className="text-[11px] text-neutral-400">이번 달 완료 건수</div>
+            <div className="text-[11px] text-neutral-400">
+              {myCompletedThisMonth === 0 && !loading
+                ? '이번 달 승인 완료 건이 없습니다'
+                : '승인 완료·이번 달 수정분'}
+            </div>
           </div>
           <div className="rounded-[10px] border border-neutral-200 bg-white px-5 py-[18px] transition-shadow hover:shadow-md">
             <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-info-100">
@@ -179,14 +293,39 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="border-b border-neutral-100 px-4 py-10 text-center text-[13px] text-neutral-500"
-                  >
-                    등록된 계약서가 없습니다. 상단에서 새 계약서를 만들거나 계약서 메뉴에서 확인하세요.
-                  </td>
-                </tr>
+                {!loading && recentMine.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="border-b border-neutral-100 px-4 py-10 text-center text-[13px] text-neutral-500"
+                    >
+                      내 계약이 없습니다. 새 계약서를 만들고 저장하면 여기에 표시됩니다.
+                    </td>
+                  </tr>
+                ) : null}
+                {recentMine.map((d) => {
+                  const st = listStatusLabel(d);
+                  return (
+                    <tr key={d.id} className="hover:bg-neutral-50">
+                      <td className="border-b border-neutral-100 px-4 py-3 text-[13px] font-medium text-neutral-900">
+                        {draftDisplayName(d)}
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3 text-[12px] text-neutral-600">
+                        {d.templateLabel || '—'}
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3">
+                        <span
+                          className={`inline-flex rounded px-2 py-0.5 text-[11px] font-medium ${st.className}`}
+                        >
+                          {st.label}
+                        </span>
+                      </td>
+                      <td className="border-b border-neutral-100 px-4 py-3 text-[12px] text-neutral-500">
+                        {formatUpdatedAt(d.updatedAt)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -196,7 +335,7 @@ export function DashboardPage() {
               <span className="text-sm font-semibold text-neutral-900">최근 활동</span>
             </div>
             <div className="px-5 py-10 text-center text-[13px] text-neutral-500">
-              최근 활동이 없습니다. 계약 저장·내보내기 등이 연동되면 여기에 표시됩니다.
+              최근 활동이 없습니다. 계약 저장·보내기 등이 연동되면 여기에 표시됩니다.
             </div>
           </div>
         </div>

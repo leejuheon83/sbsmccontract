@@ -33,4 +33,6 @@ export interface StoredContractDraft {
   >;
   /** 목록 탭「보관」분류 */
   archived?: boolean;
+  /** 최초 저장 시 로그인 사번 — 대시보드·목록에서 내 계약 필터 */
+  ownerEmployeeId?: string;
 }

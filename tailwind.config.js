@@ -10,7 +10,7 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ['Noto Sans KR', 'Pretendard', 'system-ui', 'sans-serif'],
+        sans: ['Roboto', 'Noto Sans KR', 'Pretendard', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
@@ -70,7 +70,16 @@ module.exports = {
         },
       },
       width: { sidebar: '240px' },
-      height: { topbar: '56px' },
+      height: { topbar: '64px' },
+      keyframes: {
+        'toast-in': {
+          '0%': { opacity: '0', transform: 'translateY(0.5rem)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'toast-in': 'toast-in 0.35s ease-out forwards',
+      },
     },
   },
   plugins: [],

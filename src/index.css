@@ -75,4 +75,24 @@ body {
   .clause-rich-body .co-editable-highlight:focus {
     @apply outline-none ring-2 ring-primary-500;
   }
+
+  /* HTML 조항 뷰: 패키지·정의 박스 클릭 선택 */
+  .clause-rich-body.co-pack-select-host .co-selectable-pack {
+    @apply cursor-pointer transition-shadow duration-150;
+  }
+
+  .clause-rich-body.co-pack-select-host .co-selectable-pack.is-co-pack-selected {
+    @apply rounded-sm ring-2 ring-primary-500 ring-offset-1;
+  }
+
+  .clause-rich-body.co-pack-select-host .co-pack-order-num {
+    @apply mr-1.5 inline-flex h-[1.35em] min-w-[1.35em] items-center justify-center rounded border border-warning-300 bg-warning-100 px-1 text-[11px] font-bold text-warning-900;
+    vertical-align: baseline;
+  }
+
+  .clause-rich-body.co-pack-select-host
+    .co-selectable-pack.is-co-pack-selected
+    .co-pack-order-num {
+    @apply border-primary-500 bg-primary-100 text-primary-900;
+  }
 }

@@ -7,22 +7,59 @@ import {
   addUser,
   deleteUser,
   DuplicateEmailError,
+  DuplicateEmployeeIdError,
   filterUsers,
   NotFoundError,
   toggleActive,
   updateUser,
   type UserFilterTab,
 } from '../lib/userAdminOps';
-import { loadUsersFromLocalStorage, saveUsersToLocalStorage } from '../lib/userAdminPersist';
+import { avatarGlyph } from '../lib/avatarGlyph';
+import { RESERVED_SYSTEM_EMPLOYEE_ID } from '../lib/userAdminDefaults';
+import {
+  loadUsersFromLocalStorage,
+  loadUsersFromPersistence,
+  saveUsersToPersistence,
+} from '../lib/userAdminPersist';
 
 export function AdminPage() {
   const showToast = useAppStore((s) => s.showToast);
+  const syncCurrentUserDepartmentFromProfile = useAppStore(
+    (s) => s.syncCurrentUserDepartmentFromProfile,
+  );
+  const authEmployeeId = useAppStore((s) => s.authEmployeeId);
 
-  const [users, setUsers] = useState<User[]>(() => loadUsersFromLocalStorage());
+  const [users, setUsers] = useState<User[]>([]);
+  const [usersHydrated, setUsersHydrated] = useState(false);
 
   useEffect(() => {
-    saveUsersToLocalStorage(users);
-  }, [users]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await loadUsersFromPersistence();
+        if (!cancelled) setUsers(list);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) {
+          showToast('사용자 목록을 불러오지 못했습니다', 'warning');
+          setUsers(loadUsersFromLocalStorage());
+        }
+      } finally {
+        if (!cancelled) setUsersHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!usersHydrated) return;
+    void saveUsersToPersistence(users).catch((e) => {
+      console.error(e);
+      showToast('사용자 저장에 실패했습니다', 'warning');
+    });
+  }, [users, usersHydrated, showToast]);
   const [tab, setTab] = useState<UserFilterTab>('all');
   const [query, setQuery] = useState('');
 
@@ -61,12 +98,13 @@ export function AdminPage() {
           <div className="ml-auto">
             <button
               type="button"
+              disabled={!usersHydrated}
               onClick={() => {
                 setUpsertMode('create');
                 setEditingUser(null);
                 setUpsertOpen(true);
               }}
-              className="inline-flex items-center gap-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
+              className="inline-flex items-center gap-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <line x1="12" y1="5" x2="12" y2="19" />
@@ -109,7 +147,7 @@ export function AdminPage() {
               </svg>
               <input
                 className="min-w-0 flex-1 border-0 bg-transparent text-[13px] outline-none"
-                placeholder="이름 또는 이메일 검색..."
+                placeholder="이름·이메일·사번 검색..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -118,7 +156,7 @@ export function AdminPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                {['사용자', '이메일', '부서', '상태', ''].map((h) => (
+                {['사용자', '사번', '이메일', '부서', '상태', ''].map((h) => (
                   <th
                     key={h || 'x'}
                     className="border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-400"
@@ -129,29 +167,40 @@ export function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.length === 0 ? (
+              {!usersHydrated ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
+                    className="border-b border-neutral-100 px-4 py-12 text-center text-[13px] text-neutral-500"
+                  >
+                    사용자 목록을 불러오는 중…
+                  </td>
+                </tr>
+              ) : null}
+              {usersHydrated && filteredUsers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
                     className="border-b border-neutral-100 px-4 py-12 text-center text-[13px] text-neutral-500"
                   >
                     등록된 사용자가 없습니다. 상단의 사용자 추가로 등록하세요.
                   </td>
                 </tr>
               ) : null}
-              {filteredUsers.map((u) => (
+              {usersHydrated
+                ? filteredUsers.map((u) => (
                 <tr
-                  key={u.email}
+                  key={u.id}
                   className={`hover:bg-neutral-50 ${u.isActive ? '' : 'opacity-60'}`}
                 >
                   <td className="border-b border-neutral-100 px-4 py-3">
                     <div className="flex items-center gap-2.5">
                       <div
-                        className={`flex h-[26px] w-[26px] items-center justify-center rounded-md text-[11px] font-bold text-white ${
+                        className={`flex h-[26px] w-[26px] items-center justify-center rounded-md text-sm font-bold leading-none text-white ${
                           u.isActive ? 'bg-primary-800' : 'bg-neutral-400'
                         }`}
                       >
-                        {u.name[0]}
+                        {avatarGlyph(u.name)}
                       </div>
                       <div>
                         <div
@@ -163,6 +212,9 @@ export function AdminPage() {
                         </div>
                       </div>
                     </div>
+                  </td>
+                  <td className="border-b border-neutral-100 px-4 py-3 font-mono text-[12px] text-neutral-700">
+                    {u.employeeId}
                   </td>
                   <td className="border-b border-neutral-100 px-4 py-3 text-neutral-500">{u.email}</td>
                   <td className="border-b border-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
@@ -201,7 +253,16 @@ export function AdminPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setDeleteId(u.id)}
+                        onClick={() => {
+                          if (u.employeeId === RESERVED_SYSTEM_EMPLOYEE_ID) {
+                            showToast(
+                              '사번 admin 계정은 삭제할 수 없습니다',
+                              'warning',
+                            );
+                            return;
+                          }
+                          setDeleteId(u.id);
+                        }}
                         className="rounded-md border border-danger-300 bg-white px-2 py-1 text-xs text-danger-700 hover:bg-danger-50"
                         aria-label="삭제"
                       >
@@ -210,7 +271,8 @@ export function AdminPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                  ))
+                : null}
             </tbody>
           </table>
         </div>
@@ -224,21 +286,54 @@ export function AdminPage() {
         onSubmit={(payload) => {
           try {
             if (upsertMode === 'create') {
+              const newPassword = payload.loginPassword?.trim();
+              if (!newPassword) {
+                showToast('로그인 비밀번호를 입력하세요', 'warning');
+                return false;
+              }
               setUsers((prev) =>
                 addUser(prev, {
-                  ...payload,
+                  name: payload.name,
+                  email: payload.email,
+                  department: payload.department,
+                  isActive: payload.isActive,
+                  employeeId: payload.employeeId,
+                  loginPassword: newPassword,
                 }),
               );
               showToast('사용자가 추가되었습니다', 'success');
             } else {
               if (!editingUser) return false;
-              setUsers((prev) =>
-                updateUser(prev, editingUser.id, payload),
-              );
+              const patch = {
+                name: payload.name,
+                email: payload.email,
+                department: payload.department,
+                isActive: payload.isActive,
+                employeeId: payload.employeeId,
+                ...(payload.loginPassword?.trim()
+                  ? { loginPassword: payload.loginPassword.trim() }
+                  : {}),
+              };
+              setUsers((prev) => {
+                const next = updateUser(prev, editingUser.id, patch);
+                if (
+                  authEmployeeId &&
+                  editingUser.employeeId.trim() === authEmployeeId.trim()
+                ) {
+                  queueMicrotask(() => {
+                    void syncCurrentUserDepartmentFromProfile(next);
+                  });
+                }
+                return next;
+              });
               showToast('사용자 정보가 저장되었습니다', 'success');
             }
             return true;
           } catch (e) {
+            if (e instanceof DuplicateEmployeeIdError) {
+              showToast('이미 사용 중인 사번입니다', 'warning');
+              return false;
+            }
             if (e instanceof DuplicateEmailError) {
               showToast('이미 존재하는 이메일입니다', 'warning');
               return false;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredContractDraft } from './contractDraftTypes';
-import { matchesContractListTab } from './contractListFilter';
+import { isDraftReviewApproved, matchesContractListTab } from './contractListFilter';
 
 function base(overrides: Partial<StoredContractDraft> = {}): StoredContractDraft {
   return {
@@ -56,5 +56,18 @@ describe('matchesContractListTab', () => {
     expect(matchesContractListTab(base({ reviewStatus: 'approved' }), 'done')).toBe(
       true,
     );
+  });
+});
+
+describe('isDraftReviewApproved', () => {
+  it('approved·공백·대소문자 변형이면 true', () => {
+    expect(isDraftReviewApproved(base({ reviewStatus: 'approved' }))).toBe(true);
+    expect(isDraftReviewApproved(base({ reviewStatus: ' Approved ' }))).toBe(true);
+    expect(isDraftReviewApproved(base({ reviewStatus: 'APPROVED' }))).toBe(true);
+  });
+  it('그 외는 false', () => {
+    expect(isDraftReviewApproved(base({ reviewStatus: 'pending' }))).toBe(false);
+    expect(isDraftReviewApproved(base({ reviewStatus: 'in_review' }))).toBe(false);
+    expect(isDraftReviewApproved(base({}))).toBe(false);
   });
 });

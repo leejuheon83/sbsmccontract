@@ -12,6 +12,7 @@ export const USER_DEPARTMENTS = [
   '광고기획팀',
   '공공/네트워크팀',
   '사업입찰팀',
+  '사업발전팀',
   '경영지원팀',
 ] as const;
 

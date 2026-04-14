@@ -18,11 +18,22 @@ import type {
   Genre,
   Role,
   TemplateSelection,
+  User,
 } from '../types/contract';
 import type { StoredContractDraft } from '../lib/contractDraftTypes';
 import { resolveActiveTemplateForStoredDraft } from '../lib/restoreStoredDraft';
 import type { TemplateListItem } from '../types/managedTemplate';
+import {
+  clearAuthSession,
+  loadAuthSession,
+  saveAuthSession,
+} from '../lib/authSession';
+import { authenticateEmployeeCredentials } from '../lib/employeeLogin';
+import { departmentForRegisteredEmployee } from '../lib/resolveUserDepartment';
+import { loadUsersFromPersistence } from '../lib/userAdminPersist';
 import { useTemplateListStore } from './useTemplateListStore';
+
+const initialAuthSession = loadAuthSession();
 
 export type PageId =
   | 'dashboard'
@@ -37,7 +48,13 @@ export type EditorBottomTab = 'ai' | 'ver' | 'audit';
 /** compose: 계약서 작성 · review: 검토 화면 전용(읽기 중심, AI 패널) */
 export type EditorMode = 'compose' | 'review';
 
-type Toast = { id: string; msg: string; type: 'success' | 'info' | 'warning' };
+type Toast = {
+  id: string;
+  msg: string;
+  type: 'success' | 'info' | 'warning';
+  /** 감사 로그와 동일한 형태: 작성자 · 시각 */
+  subtitle: string;
+};
 
 type VersionReviewMap = Record<
   string,
@@ -64,7 +81,11 @@ interface AppState {
   setPage: (p: PageId) => void;
 
   toasts: Toast[];
-  showToast: (msg: string, type?: Toast['type']) => void;
+  showToast: (
+    msg: string,
+    type?: Toast['type'],
+    subtitleOverride?: string,
+  ) => void;
   dismissToast: (id: string) => void;
 
   selection: TemplateSelection;
@@ -119,9 +140,12 @@ interface AppState {
   /** 데모·RBAC용 (Topbar 표시와 맞춤) */
   currentRole: Role;
   setCurrentRole: (r: Role) => void;
-  /** 로그인 사용자 부서 — 검토·승인은 경영지원팀만 */
+  /** 로그인 사용자 부서 — 사용자 관리 등록 정보와 동기화 */
   currentUserDepartment: string;
-  setCurrentUserDepartment: (d: string) => void;
+  /** 등록 사용자 목록 기준으로 부서 다시 읽기(로그인·본인 정보 수정 후) */
+  syncCurrentUserDepartmentFromProfile: (
+    usersOverride?: User[],
+  ) => Promise<void>;
   versionReviewByVer: VersionReviewMap;
   setVersionReviewApproval: (
     ver: string,
@@ -136,9 +160,64 @@ interface AppState {
   openReviewDraft: (draft: StoredContractDraft) => void;
   /** 검토 상세 닫고 목록으로 */
   closeReviewDraft: () => void;
+  /**
+   * 검토 화면에서 `reviewStatus === 'approved'` 로 연 경우 true.
+   * Word보내기만 허용하고 편집·재승인·AI 패널 등은 숨김.
+   */
+  reviewApprovedReadOnly: boolean;
+
+  /** 사번 로그인 세션 */
+  authEmployeeId: string | null;
+  /** 사용자 관리에 등록된 표시 이름(대시보드 인사·탑바) */
+  authDisplayName: string | null;
+  isAuthenticated: boolean;
+  loginWithEmployee: (
+    employeeId: string,
+    password: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  logout: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
+  authEmployeeId: initialAuthSession?.employeeId ?? null,
+  authDisplayName: null,
+  isAuthenticated: Boolean(initialAuthSession?.employeeId),
+
+  loginWithEmployee: async (employeeId, password) => {
+    const result = await authenticateEmployeeCredentials(employeeId, password);
+    if (!result.ok) {
+      get().showToast(result.error, 'warning');
+      return { ok: false, error: result.error };
+    }
+    saveAuthSession({
+      employeeId: result.employeeId,
+      loggedInAt: new Date().toISOString(),
+    });
+    set({
+      authEmployeeId: result.employeeId,
+      authDisplayName: result.displayName,
+      isAuthenticated: true,
+      currentUserDepartment: result.department,
+    });
+    get().showToast('로그인되었습니다', 'success');
+    return { ok: true };
+  },
+
+  logout: () => {
+    if (get().editorMode === 'review') {
+      get().closeReviewDraft();
+    }
+    clearAuthSession();
+    set({
+      authEmployeeId: null,
+      authDisplayName: null,
+      isAuthenticated: false,
+      page: 'dashboard',
+      currentUserDepartment: MANAGEMENT_SUPPORT_DEPARTMENT,
+    });
+    get().showToast('로그아웃되었습니다', 'info');
+  },
+
   page: 'dashboard',
   setPage: (page) => {
     if (page !== 'review' && get().editorMode === 'review') {
@@ -148,10 +227,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toasts: [],
-  showToast: (msg, type = 'info') => {
+  showToast: (msg, type = 'info', subtitleOverride) => {
     const id = nextToastId();
-    set((s) => ({ toasts: [...s.toasts, { id, msg, type }] }));
-    setTimeout(() => get().dismissToast(id), 3000);
+    const author = get().authEmployeeId?.trim() ?? '사용자';
+    const time = new Date().toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const subtitle = subtitleOverride ?? `${author} · ${time}`;
+    set((s) => ({
+      toasts: [...s.toasts, { id, msg, type, subtitle }],
+    }));
+    const durationMs = 4200;
+    setTimeout(() => get().dismissToast(id), durationMs);
   },
   dismissToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
@@ -226,14 +314,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialClauseCount: 0,
   aiPanelVisible: false,
   editorMode: 'compose',
+  reviewApprovedReadOnly: false,
   extraClauseCount: 0,
   auditEntries: [],
 
   currentRole: 'admin',
   setCurrentRole: (currentRole) => set({ currentRole }),
-  currentUserDepartment: MANAGEMENT_SUPPORT_DEPARTMENT,
-  setCurrentUserDepartment: (currentUserDepartment) =>
-    set({ currentUserDepartment }),
+  currentUserDepartment: departmentForRegisteredEmployee(
+    initialAuthSession?.employeeId ?? null,
+  ),
+  syncCurrentUserDepartmentFromProfile: async (usersOverride) => {
+    const users =
+      usersOverride ?? (await loadUsersFromPersistence());
+    const emp = get().authEmployeeId?.trim();
+    const row = emp
+      ? users.find((u) => u.employeeId.trim() === emp)
+      : undefined;
+    set({
+      currentUserDepartment: departmentForRegisteredEmployee(
+        emp ?? null,
+        users,
+      ),
+      authDisplayName: row?.name ?? get().authDisplayName,
+    });
+  },
   versionReviewByVer: {},
   setVersionReviewApproval: (ver, status) => {
     if (!canPerformContractReviewByDepartment(get().currentUserDepartment)) {
@@ -266,7 +370,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       status === 'approved' ? 'success' : 'warning',
     );
   },
-  editorBottomTab: 'ver',
+  editorBottomTab: 'audit',
   setEditorBottomTab: (editorBottomTab) => set({ editorBottomTab }),
 
   editorOrigin: 'matrix',
@@ -280,7 +384,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       id: nextAuditId(),
       action,
       type,
-      author: '이주헌',
+      author: get().authEmployeeId ?? '사용자',
       timestamp: new Date().toLocaleTimeString('ko-KR', {
         hour: '2-digit',
         minute: '2-digit',
@@ -330,7 +434,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       aiPanelVisible: false,
       extraClauseCount: 0,
       versionReviewByVer: { [tmpl.ver]: 'pending' },
-      editorBottomTab: 'ver',
+      editorBottomTab: 'audit',
     });
   },
 
@@ -359,7 +463,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   openEditorFromManagedItem: (item) => {
     const tmpl = managedItemToContractTemplate(item);
     const clauses = tmpl.clauses.map((c) => ({ ...c }));
-    get().appendAudit(`관리 템플릿 '${item.name}' 불러오기`, 'load');
     set({
       page: 'editor',
       editorMode: 'compose',
@@ -382,7 +485,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         matrixClauseSourceId: null,
       },
       versionReviewByVer: { [item.ver]: 'pending' },
-      editorBottomTab: 'ver',
+      editorBottomTab: 'audit',
     });
   },
 
@@ -398,7 +501,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         matrixClauseSourceName: null,
         localDraftId: null,
         versionReviewByVer: {},
-        editorBottomTab: 'ver',
+        editorBottomTab: 'audit',
       });
       get().setPage('templates');
       return;
@@ -416,7 +519,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         matrixClauseSourceId: null,
       },
       versionReviewByVer: {},
-      editorBottomTab: 'ver',
+      editorBottomTab: 'audit',
     });
   },
 
@@ -462,7 +565,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   recordClauseEdit: (clauseTitle) => {
     get().appendAudit(`'${clauseTitle}' 조항 내용 수정`, 'edit');
-    get().showToast('조항이 수정되었습니다. 저장 전 상태입니다.', 'info');
+    get().showToast(`'${clauseTitle}' 조항 내용 수정`, 'info');
   },
 
   acceptAiSuggestion: () => {
@@ -512,7 +615,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         [newVer]: 'pending',
       },
     }));
-    get().showToast(`${newVer}으로 저장되었습니다`, 'success');
+    get().showToast(`${newVer}으로 저장`, 'success');
   },
 
   hideAiPanel: () => set({ aiPanelVisible: false }),
@@ -560,7 +663,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       extraClauseCount: 0,
       aiPanelVisible: false,
       versionReviewByVer: vr,
-      editorBottomTab: 'ver',
+      editorBottomTab: 'audit',
+      reviewApprovedReadOnly: false,
     });
     get().appendAudit(`저장 초안 불러오기 · ${label}`, 'load');
     get().showToast('저장된 초안을 불러왔습니다', 'success');
@@ -589,6 +693,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? { ...draft.versionReviewByVer }
         : { [draft.displayVer]: 'pending' as const };
 
+    const approvedReadOnly = (draft.reviewStatus ?? 'pending') === 'approved';
+
     set({
       page: 'review',
       editorMode: 'review',
@@ -607,12 +713,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       auditEntries: draft.auditEntries.slice(0, 100),
       initialClauseCount: clauses.length,
       extraClauseCount: 0,
-      aiPanelVisible: true,
+      reviewApprovedReadOnly: approvedReadOnly,
+      aiPanelVisible: !approvedReadOnly,
       versionReviewByVer: vr,
-      editorBottomTab: 'ai',
+      editorBottomTab: approvedReadOnly ? 'audit' : 'ai',
     });
     get().appendAudit(`검토 화면에서 초안 열기 · ${label}`, 'load');
-    get().showToast('검토용으로 불러왔습니다', 'success');
+    get().showToast(
+      approvedReadOnly
+        ? '승인된 계약입니다. Word보내기만 가능합니다'
+        : '검토용으로 불러왔습니다',
+      approvedReadOnly ? 'info' : 'success',
+    );
   },
 
   closeReviewDraft: () => {
@@ -635,7 +747,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       auditEntries: [],
       versionReviewByVer: {},
       aiPanelVisible: false,
-      editorBottomTab: 'ver',
+      editorBottomTab: 'audit',
+      reviewApprovedReadOnly: false,
       extraClauseCount: 0,
       initialClauseCount: 0,
     });

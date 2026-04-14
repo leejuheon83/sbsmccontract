@@ -148,6 +148,13 @@ export interface MatrixRow {
 // ─────────────────────────────────────────
 export interface User {
   id: string;
+  /** 로그인 사번 — 관리자가 사용자 관리에서 부여 (고유) */
+  employeeId: string;
+  /**
+   * 로그인 비밀번호 — 로컬 데모만 평문 저장.
+   * 운영: 서버 해시·인증만 사용하고 이 필드는 제거하세요.
+   */
+  loginPassword: string;
   name: string;
   email: string;
   /** 부서(USER_DEPARTMENTS 중 선택) */

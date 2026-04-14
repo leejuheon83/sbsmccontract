@@ -2,6 +2,10 @@ import { useMemo, useState } from 'react';
 import { ConfirmDialog } from '../components/templates/ConfirmDialog';
 import { EditTemplateModal } from '../components/templates/EditTemplateModal';
 import { NewTemplateModal } from '../components/templates/NewTemplateModal';
+import {
+  canAddNewManagedTemplate,
+  isAdminOrManagementSupport,
+} from '../lib/userManagementPolicy';
 import { formatTemplateMetaFromItem } from '../lib/templateListOps';
 import { useAppStore } from '../store/useAppStore';
 import { useTemplateListStore } from '../store/useTemplateListStore';
@@ -9,6 +13,8 @@ import type { TemplateListItem, TemplateTone } from '../types/managedTemplate';
 
 export function TemplatesPage() {
   const showToast = useAppStore((s) => s.showToast);
+  const authEmployeeId = useAppStore((s) => s.authEmployeeId);
+  const currentUserDepartment = useAppStore((s) => s.currentUserDepartment);
   const openEditorFromManagedItem = useAppStore((s) => s.openEditorFromManagedItem);
   const items = useTemplateListStore((s) => s.items);
   const addItem = useTemplateListStore((s) => s.addItem);
@@ -24,6 +30,21 @@ export function TemplatesPage() {
     | { mode: 'discard' | 'remove'; id: string; name: string }
   >(null);
 
+  const canMutateTemplates = useMemo(
+    () =>
+      isAdminOrManagementSupport({
+        employeeId: authEmployeeId,
+        department: currentUserDepartment,
+      }),
+    [authEmployeeId, currentUserDepartment],
+  );
+
+  const canAddNewTemplate = useMemo(
+    () =>
+      canAddNewManagedTemplate(authEmployeeId, currentUserDepartment),
+    [authEmployeeId, currentUserDepartment],
+  );
+
   const activeList = useMemo(
     () => items.filter((i) => i.status === 'active'),
     [items],
@@ -36,6 +57,13 @@ export function TemplatesPage() {
   const visible = tab === 'active' ? activeList : discardedList;
 
   const handleCreate = (payload: Omit<TemplateListItem, 'id' | 'status'>) => {
+    if (!canAddNewTemplate) {
+      showToast(
+        '새 템플릿 추가는 사번 admin 또는 경영지원팀 소속 계정만 할 수 있습니다.',
+        'warning',
+      );
+      return;
+    }
     const id =
       typeof crypto !== 'undefined' && crypto.randomUUID
         ? `tpl-${crypto.randomUUID()}`
@@ -61,7 +89,7 @@ export function TemplatesPage() {
   };
 
   const runConfirm = () => {
-    if (!confirm) return;
+    if (!confirm || !canMutateTemplates) return;
     if (confirm.mode === 'discard') {
       discardItem(confirm.id);
       showToast(`'${confirm.name}' 템플릿을 폐기했습니다`, 'warning');
@@ -80,20 +108,33 @@ export function TemplatesPage() {
           <span className="text-neutral-300">›</span>
           <span className="text-neutral-700">템플릿 관리</span>
         </div>
-        <div className="flex items-center gap-3 pb-4">
+        <div className="flex flex-wrap items-center gap-3 pb-4">
           <h1 className="text-xl font-bold text-neutral-900">템플릿 관리</h1>
+          {!canMutateTemplates ? (
+            <p className="max-w-xl text-xs text-neutral-500">
+              조회만 가능합니다. 템플릿 수정·폐기는 경영지원팀 소속 또는 사번 admin 만 할
+              수 있습니다.
+            </p>
+          ) : !canAddNewTemplate ? (
+            <p className="max-w-xl text-xs text-neutral-500">
+              새 템플릿 추가는 사용자 관리에 등록된 계정 중 사번 admin 또는 경영지원팀
+              소속만 할 수 있습니다.
+            </p>
+          ) : null}
           <div className="ml-auto">
-            <button
-              type="button"
-              onClick={() => setNewOpen(true)}
-              className="inline-flex items-center gap-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              새 템플릿
-            </button>
+            {canAddNewTemplate ? (
+              <button
+                type="button"
+                onClick={() => setNewOpen(true)}
+                className="inline-flex items-center gap-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                새 템플릿
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="-mx-7 flex gap-0 border-t border-neutral-200 px-7">
@@ -126,7 +167,9 @@ export function TemplatesPage() {
         {visible.length === 0 ? (
           <div className="rounded-[10px] border border-dashed border-neutral-300 bg-neutral-50 px-6 py-16 text-center text-sm text-neutral-500">
             {tab === 'active'
-              ? '활성 템플릿이 없습니다. 새 템플릿을 추가해 보세요.'
+              ? canAddNewTemplate
+                ? '활성 템플릿이 없습니다. 새 템플릿을 추가해 보세요.'
+                : '활성 템플릿이 없습니다.'
               : '폐기된 템플릿이 없습니다.'}
           </div>
         ) : (
@@ -136,8 +179,9 @@ export function TemplatesPage() {
                 key={c.id}
                 item={c}
                 tab={tab}
+                canMutate={canMutateTemplates}
                 onEditClick={
-                  tab === 'active'
+                  canMutateTemplates && tab === 'active'
                     ? () => {
                         const latest = useTemplateListStore
                           .getState()
@@ -146,12 +190,15 @@ export function TemplatesPage() {
                       }
                     : undefined
                 }
-                onDeleteClick={() =>
-                  setConfirm(
-                    tab === 'active'
-                      ? { mode: 'discard', id: c.id, name: c.name }
-                      : { mode: 'remove', id: c.id, name: c.name },
-                  )
+                onDeleteClick={
+                  canMutateTemplates
+                    ? () =>
+                        setConfirm(
+                          tab === 'active'
+                            ? { mode: 'discard', id: c.id, name: c.name }
+                            : { mode: 'remove', id: c.id, name: c.name },
+                        )
+                    : undefined
                 }
               />
             ))}
@@ -170,6 +217,7 @@ export function TemplatesPage() {
         item={editItem}
         onClose={() => setEditItem(null)}
         onSave={(id, patch) => {
+          if (!canMutateTemplates) return;
           updateItem(id, patch);
           showToast('템플릿 정보가 저장되었습니다', 'success');
           if (patch.attachment && !patch.attachment.textContent) {
@@ -180,6 +228,7 @@ export function TemplatesPage() {
           }
         }}
         onOpenInEditor={(id) => {
+          if (!canMutateTemplates) return;
           const latest = useTemplateListStore.getState().items.find((i) => i.id === id);
           setEditItem(null);
           if (latest) openEditorFromManagedItem(latest);
@@ -216,13 +265,15 @@ export function TemplatesPage() {
 function TemplateCard({
   item: c,
   tab,
+  canMutate,
   onEditClick,
   onDeleteClick,
 }: {
   item: TemplateListItem;
   tab: 'active' | 'discarded';
+  canMutate: boolean;
   onEditClick?: () => void;
-  onDeleteClick: () => void;
+  onDeleteClick?: () => void;
 }) {
   const meta = formatTemplateMetaFromItem(c);
   const isDiscarded = c.status === 'discarded';
@@ -233,42 +284,46 @@ function TemplateCard({
         isDiscarded ? 'bg-neutral-50 opacity-[0.55]' : 'bg-white'
       }`}
     >
-      <div className="absolute right-3 top-3 flex gap-1">
-        {onEditClick ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditClick();
-            }}
-            className="rounded-md border border-neutral-200 bg-white p-1.5 text-neutral-500 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800"
-            title="템플릿 정보 수정"
-            aria-label="템플릿 정보 수정"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDeleteClick();
-          }}
-          className="rounded-md border border-neutral-200 bg-white p-1.5 text-neutral-500 hover:border-danger-300 hover:bg-danger-50 hover:text-danger-700"
-          title={tab === 'active' ? '폐기' : '삭제'}
-          aria-label={tab === 'active' ? '템플릿 폐기' : '템플릿 삭제'}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            <line x1="10" y1="11" x2="10" y2="17" />
-            <line x1="14" y1="11" x2="14" y2="17" />
-          </svg>
-        </button>
-      </div>
+      {canMutate ? (
+        <div className="absolute right-3 top-3 flex gap-1">
+          {onEditClick ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditClick();
+              }}
+              className="rounded-md border border-neutral-200 bg-white p-1.5 text-neutral-500 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800"
+              title="템플릿 정보 수정"
+              aria-label="템플릿 정보 수정"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+          ) : null}
+          {onDeleteClick ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteClick();
+              }}
+              className="rounded-md border border-neutral-200 bg-white p-1.5 text-neutral-500 hover:border-danger-300 hover:bg-danger-50 hover:text-danger-700"
+              title={tab === 'active' ? '폐기' : '삭제'}
+              aria-label={tab === 'active' ? '템플릿 폐기' : '템플릿 삭제'}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className={`mb-3 flex h-9 w-9 items-center justify-center rounded-lg ${
@@ -285,7 +340,11 @@ function TemplateCard({
       >
         <DocIcon stroke={iconStroke(c.tone)} />
       </div>
-      <div className="pr-[4.5rem] text-[13px] font-semibold text-neutral-900">{c.name}</div>
+      <div
+        className={`text-[13px] font-semibold text-neutral-900 ${canMutate ? 'pr-[4.5rem]' : ''}`}
+      >
+        {c.name}
+      </div>
       <div className="mb-2.5 mt-1 text-[11px] text-neutral-400">{meta}</div>
       <div className="flex items-center justify-between">
         <span className="font-mono text-[10px] text-neutral-400">{c.ver}</span>

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { PageId } from '../../store/useAppStore';
 import { useAppStore } from '../../store/useAppStore';
+import { canAccessUserManagement } from '../../lib/userManagementPolicy';
 import { MANAGEMENT_SUPPORT_DEPARTMENT } from '../../lib/userDepartments';
 
 const BASE_BUTTONS: { id: PageId; label: string }[] = [
@@ -14,24 +15,32 @@ const BASE_BUTTONS: { id: PageId; label: string }[] = [
 export function PageNavBar() {
   const page = useAppStore((s) => s.page);
   const setPage = useAppStore((s) => s.setPage);
+  const authEmployeeId = useAppStore((s) => s.authEmployeeId);
   const currentUserDepartment = useAppStore((s) => s.currentUserDepartment);
 
   const buttons = useMemo(() => {
+    const base = canAccessUserManagement({
+      employeeId: authEmployeeId,
+      department: currentUserDepartment,
+    })
+      ? BASE_BUTTONS
+      : BASE_BUTTONS.filter((b) => b.id !== 'admin');
+
     if (currentUserDepartment.trim() !== MANAGEMENT_SUPPORT_DEPARTMENT) {
-      return BASE_BUTTONS;
+      return base;
     }
-    const idx = BASE_BUTTONS.findIndex((b) => b.id === 'editor');
-    if (idx < 0) return BASE_BUTTONS;
+    const idx = base.findIndex((b) => b.id === 'editor');
+    if (idx < 0) return base;
     return [
-      ...BASE_BUTTONS.slice(0, idx + 1),
+      ...base.slice(0, idx + 1),
       { id: 'review' as const, label: '계약서 검토' },
-      ...BASE_BUTTONS.slice(idx + 1),
+      ...base.slice(idx + 1),
     ];
-  }, [currentUserDepartment]);
+  }, [authEmployeeId, currentUserDepartment]);
 
   return (
-    <div className="flex flex-wrap gap-1.5 border-b border-neutral-200 bg-neutral-100 px-7 py-3">
-      <span className="mr-1 text-[11px] leading-[26px] text-neutral-500">
+    <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto border-b border-neutral-200 bg-neutral-100 px-7 py-3">
+      <span className="mr-1 shrink-0 whitespace-nowrap text-[11px] leading-[26px] text-neutral-500">
         화면 전환:
       </span>
       {buttons.map((b) => (
@@ -39,7 +48,7 @@ export function PageNavBar() {
           key={b.id}
           type="button"
           onClick={() => setPage(b.id)}
-          className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+          className={`shrink-0 whitespace-nowrap rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
             page === b.id
               ? 'border-primary-800 bg-primary-800 text-white'
               : 'border-neutral-300 bg-white text-neutral-600 hover:border-primary-800 hover:bg-primary-800 hover:text-white'
