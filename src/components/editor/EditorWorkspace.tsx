@@ -1,5 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { PickManagedTemplateModal } from '../contracts/PickManagedTemplateModal';
+import {
+  detectToxicClauses,
+  severityLabel,
+  severityColor,
+  type ToxicClauseIssue,
+} from '../../lib/toxicClauseDetector';
 import {
   canPerformContractReviewByDepartment,
   defaultReviewForVer,
@@ -157,6 +163,9 @@ export function EditorWorkspace() {
   const [wordBusy, setWordBusy] = useState(false);
   const [reviewDecisionBusy, setReviewDecisionBusy] = useState(false);
   const [reviewUndoBusy, setReviewUndoBusy] = useState(false);
+  const [toxicScanDone, setToxicScanDone] = useState(false);
+  const [toxicIssues, setToxicIssues] = useState<ToxicClauseIssue[]>([]);
+  const [dismissedToxic, setDismissedToxic] = useState<Set<string>>(new Set());
   const templateListItems = useTemplateListStore((s) => s.items);
   const editorMode = useAppStore((s) => s.editorMode);
   const closeReviewDraft = useAppStore((s) => s.closeReviewDraft);
@@ -186,10 +195,30 @@ export function EditorWorkspace() {
   const reviewApprovedReadOnly = useAppStore((s) => s.reviewApprovedReadOnly);
   const authEmployeeId = useAppStore((s) => s.authEmployeeId);
 
+  const visibleToxicIssues = useMemo(
+    () => toxicIssues.filter((t) => !dismissedToxic.has(`${t.clauseIndex}-${t.category}`)),
+    [toxicIssues, dismissedToxic],
+  );
+
   if (!activeTemplate) return null;
 
   const isReview = editorMode === 'review';
   const isReviewExportOnly = isReview && reviewApprovedReadOnly;
+
+  const runToxicScan = () => {
+    const found = detectToxicClauses(clauses);
+    setToxicIssues(found);
+    setToxicScanDone(true);
+    setDismissedToxic(new Set());
+  };
+
+  const dismissToxicIssue = (issue: ToxicClauseIssue) => {
+    setDismissedToxic((prev) => {
+      const next = new Set(prev);
+      next.add(`${issue.clauseIndex}-${issue.category}`);
+      return next;
+    });
+  };
   const canSave = isAdminOrManagementSupport({
     employeeId: authEmployeeId,
     department: currentUserDepartment,
@@ -690,71 +719,154 @@ export function EditorWorkspace() {
               <div className="min-h-0 overflow-y-auto p-4">
                 {tab === 'ai' ? (
                   <>
-                    {aiPanelVisible ? (
-                      <div className="mb-4 overflow-hidden rounded-[10px] border-[1.5px] border-info-300 bg-info-100">
-                        <div className="flex items-center gap-2 border-b border-info-300 px-4 py-3">
-                          <span className="rounded border border-info-300 bg-info-100 px-1.5 py-0.5 text-[11px] font-bold text-info-700">
-                            AI 검토
-                          </span>
-                          <span className="text-[13px] font-semibold text-neutral-900">
-                            {activeTemplate.aiSuggest.title}
-                          </span>
+                    {/* 독소조항 탐지 */}
+                    {!toxicScanDone ? (
+                      <div className="mb-4 text-center">
+                        <div className="mb-3 rounded-xl border border-neutral-200 bg-gradient-to-b from-neutral-50 to-white px-4 py-5">
+                          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-red-50">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 9v4" />
+                              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                              <circle cx="12" cy="16" r="0.5" fill="#EF4444" />
+                            </svg>
+                          </div>
+                          <h3 className="mb-1 text-[13px] font-bold text-neutral-900">독소조항 탐지</h3>
+                          <p className="mb-3 text-[11px] leading-relaxed text-neutral-500">
+                            일방적 해지권, 과도한 위약금, 면책 범위 과다 등<br />
+                            불공정 조항을 자동으로 검출합니다.
+                          </p>
                           <button
                             type="button"
-                            className="ml-auto flex h-[22px] w-[22px] items-center justify-center rounded text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
-                            onClick={() => {
-                              hideAiPanel();
-                              setTab('ver');
-                            }}
-                            aria-label="닫기"
+                            onClick={runToxicScan}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-red-700 active:scale-[0.97] transition-all"
                           >
-                            ✕
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="11" cy="11" r="8" />
+                              <path d="M21 21l-4.35-4.35" />
+                            </svg>
+                            조항 분석 시작
                           </button>
                         </div>
-                        <div className="px-4 py-3.5">
-                          <div className="mb-2.5 rounded-md border border-info-300 bg-white px-2.5 py-1.5 text-[11px] text-info-700">
-                            {activeTemplate.aiSuggest.reason}
+
+                        {aiPanelVisible ? (
+                          <div className="mb-4 overflow-hidden rounded-[10px] border-[1.5px] border-info-300 bg-info-100">
+                            <div className="flex items-center gap-2 border-b border-info-300 px-4 py-3">
+                              <span className="rounded border border-info-300 bg-info-100 px-1.5 py-0.5 text-[11px] font-bold text-info-700">AI 검토</span>
+                              <span className="text-[13px] font-semibold text-neutral-900">{activeTemplate.aiSuggest.title}</span>
+                              <button type="button" className="ml-auto flex h-[22px] w-[22px] items-center justify-center rounded text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700" onClick={() => { hideAiPanel(); setTab('ver'); }} aria-label="닫기">✕</button>
+                            </div>
+                            <div className="px-4 py-3.5">
+                              <div className="mb-2.5 rounded-md border border-info-300 bg-white px-2.5 py-1.5 text-[11px] text-info-700">{activeTemplate.aiSuggest.reason}</div>
+                              <p className="mb-3 max-h-20 overflow-hidden text-xs leading-relaxed text-neutral-700">{activeTemplate.aiSuggest.body}</p>
+                              <div className="mb-3 flex gap-1.5 rounded-md border border-warning-300 bg-warning-100 px-2.5 py-2 text-[11px] text-warning-700">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0" aria-hidden><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+                                AI 추천은 법적 조언이 아닙니다. 반드시 법무 검토 필요.
+                              </div>
+                              <div className="flex gap-2">
+                                <button type="button" onClick={acceptAiSuggestion} className="flex-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700">수락하여 삽입</button>
+                                <button type="button" onClick={rejectAiSuggestion} className="rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100">거부</button>
+                              </div>
+                            </div>
                           </div>
-                          <p className="mb-3 max-h-20 overflow-hidden text-xs leading-relaxed text-neutral-700">
-                            {activeTemplate.aiSuggest.body}
-                          </p>
-                          <div className="mb-3 flex gap-1.5 rounded-md border border-warning-300 bg-warning-100 px-2.5 py-2 text-[11px] text-warning-700">
-                            <svg
-                              width="13"
-                              height="13"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              className="mt-0.5 shrink-0"
-                              aria-hidden
-                            >
-                              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                            </svg>
-                            AI 추천은 법적 조언이 아닙니다. 반드시 법무 검토 필요.
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {/* 스캔 결과 헤더 */}
+                        <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white ${visibleToxicIssues.length > 0 ? 'bg-red-500' : 'bg-emerald-500'}`}>
+                              {visibleToxicIssues.length}
+                            </span>
+                            <span className="text-[12px] font-semibold text-neutral-800">
+                              {visibleToxicIssues.length > 0
+                                ? `${visibleToxicIssues.length}건 탐지됨`
+                                : '독소조항 없음'}
+                            </span>
                           </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={acceptAiSuggestion}
-                              className="flex-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
-                            >
-                              수락하여 삽입
-                            </button>
-                            <button
-                              type="button"
-                              onClick={rejectAiSuggestion}
-                              className="rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
-                            >
-                              거부
-                            </button>
+                          <button
+                            type="button"
+                            onClick={runToxicScan}
+                            className="rounded-md border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-500 hover:bg-neutral-50"
+                          >
+                            재검사
+                          </button>
+                        </div>
+
+                        {visibleToxicIssues.length === 0 && toxicScanDone ? (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-6 text-center">
+                            <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                <polyline points="22 4 12 14.01 9 11.01" />
+                              </svg>
+                            </div>
+                            <p className="text-[12px] font-semibold text-emerald-800">불공정 조항이 발견되지 않았습니다</p>
+                            <p className="mt-1 text-[11px] text-emerald-600">법무 최종 검토를 진행해 주세요.</p>
                           </div>
+                        ) : null}
+
+                        {/* 이슈 목록 */}
+                        {visibleToxicIssues.map((issue, i) => {
+                          const sc = severityColor(issue.severity);
+                          return (
+                            <div key={`${issue.clauseIndex}-${issue.category}-${i}`} className={`overflow-hidden rounded-xl border ${sc.border}`}>
+                              <div className={`flex items-start gap-2 ${sc.bg} px-3 py-2.5`}>
+                                <span className={`mt-0.5 shrink-0 ${sc.icon}`}>
+                                  {issue.severity === 'critical' ? (
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                                  ) : issue.severity === 'warning' ? (
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><path d="M12 9v4" /></svg>
+                                  ) : (
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><circle cx="12" cy="8" r="0.5" fill="currentColor" /></svg>
+                                  )}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${sc.bg} ${sc.text} border ${sc.border}`}>
+                                      {severityLabel(issue.severity)}
+                                    </span>
+                                    <span className="text-[11px] font-bold text-neutral-800">{issue.category}</span>
+                                  </div>
+                                  <p className="mt-0.5 text-[10px] text-neutral-500">
+                                    {issue.clauseTitle} · 매칭: <span className="font-medium text-neutral-700">"{issue.matched}"</span>
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => dismissToxicIssue(issue)}
+                                  className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-white/60 hover:text-neutral-600"
+                                  title="무시"
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                                </button>
+                              </div>
+                              <div className="border-t border-neutral-100 bg-white px-3 py-2.5">
+                                <p className="mb-1.5 text-[11px] leading-relaxed text-neutral-600">
+                                  {issue.description}
+                                </p>
+                                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2">
+                                  <div className="mb-1 flex items-center gap-1">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                                    <span className="text-[10px] font-bold text-emerald-700">수정 제안</span>
+                                  </div>
+                                  <p className="text-[11px] leading-relaxed text-emerald-800">
+                                    {issue.suggestion}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        <div className="mt-2 flex gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-[10px] text-neutral-500">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0" aria-hidden>
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                          </svg>
+                          본 탐지 결과는 법적 조언이 아닙니다. 반드시 법무 전문가의 검토가 필요합니다.
                         </div>
                       </div>
-                    ) : null}
-                    <p className="px-1 text-center text-[11px] text-neutral-500">
-                      템플릿 기준 추가 조항을 검토할 수 있습니다.
-                    </p>
+                    )}
                   </>
                 ) : null}
                 {tab === 'ver' ? <VersionTimeline /> : null}
