@@ -56,8 +56,24 @@ export function LoginPage() {
               decoding="async"
             />
             <div>
-              <h1 className="text-lg font-bold text-neutral-900">
-                IMC 계약서 자동화
+              <h1 className="flex items-center gap-1.5">
+                <span
+                  className="text-lg font-extrabold tracking-tight"
+                  style={{
+                    background: 'linear-gradient(135deg, #1E3A5F 0%, #2563EB 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  IMC
+                </span>
+                <span className="text-base font-bold tracking-tight text-neutral-800">
+                  계약서 자동화
+                </span>
+                <span className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
+                  Beta
+                </span>
               </h1>
               <p className="mt-1 text-[13px] text-neutral-500">
                 관리자가 등록한 사번·비밀번호로만 로그인할 수 있습니다.
