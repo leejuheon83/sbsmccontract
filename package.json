@@ -10,7 +10,12 @@
     "test:watch": "vitest",
     "open": "open index.html",
     "vercel:deploy": "npx vercel --prod --yes",
-    "vercel:link": "npx vercel link"
+    "vercel:link": "npx vercel link",
+    "supabase": "npx supabase",
+    "supabase:start": "npx supabase start",
+    "supabase:stop": "npx supabase stop",
+    "supabase:db:push": "npx supabase db push",
+    "supabase:types": "npx supabase gen types typescript --linked --schema public > src/lib/supabase/database.types.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",

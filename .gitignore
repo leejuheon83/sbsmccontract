@@ -61,4 +61,7 @@ Desktop.ini
 # Misc
 .cache/
 .turbo/
+.npm-cache/
 *.local.md
+
+.vercel

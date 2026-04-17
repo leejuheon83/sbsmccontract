@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   countSelectablePackMarkers,
   countYellowEditableHighlightsInHtml,
+  extractEditableHighlightPlainTextsFromClauseHtml,
   injectSelectablePackMarkers,
 } from './richClauseHtml';
 
@@ -15,6 +16,17 @@ describe('countYellowEditableHighlightsInHtml', () => {
 
   it('일반 문단만 있으면 0', () => {
     expect(countYellowEditableHighlightsInHtml('<p>본문만</p>')).toBe(0);
+  });
+});
+
+describe('extractEditableHighlightPlainTextsFromClauseHtml', () => {
+  it('편집기와 동일하게 mark·yellow span 순서로 추출', () => {
+    const html =
+      '<p><mark>첫</mark> 끝 <span style="background-color: #ffff00">둘</span></p>';
+    expect(extractEditableHighlightPlainTextsFromClauseHtml(html)).toEqual([
+      '첫',
+      '둘',
+    ]);
   });
 });
 

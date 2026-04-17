@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '../components/templates/ConfirmDialog';
 import { EditTemplateModal } from '../components/templates/EditTemplateModal';
 import { NewTemplateModal } from '../components/templates/NewTemplateModal';
@@ -6,9 +6,13 @@ import {
   canAddNewManagedTemplate,
   isAdminOrManagementSupport,
 } from '../lib/userManagementPolicy';
+import { isSupabaseConfigured } from '../lib/supabase/client';
 import { formatTemplateMetaFromItem } from '../lib/templateListOps';
 import { useAppStore } from '../store/useAppStore';
-import { useTemplateListStore } from '../store/useTemplateListStore';
+import {
+  hydrateManagedTemplateList,
+  useTemplateListStore,
+} from '../store/useTemplateListStore';
 import type { TemplateListItem, TemplateTone } from '../types/managedTemplate';
 
 export function TemplatesPage() {
@@ -30,19 +34,26 @@ export function TemplatesPage() {
     | { mode: 'discard' | 'remove'; id: string; name: string }
   >(null);
 
+  useEffect(() => {
+    void hydrateManagedTemplateList();
+  }, []);
+
+  const cloudEnabled = isSupabaseConfigured();
+
   const canMutateTemplates = useMemo(
     () =>
+      cloudEnabled &&
       isAdminOrManagementSupport({
         employeeId: authEmployeeId,
         department: currentUserDepartment,
       }),
-    [authEmployeeId, currentUserDepartment],
+    [authEmployeeId, currentUserDepartment, cloudEnabled],
   );
 
   const canAddNewTemplate = useMemo(
     () =>
-      canAddNewManagedTemplate(authEmployeeId, currentUserDepartment),
-    [authEmployeeId, currentUserDepartment],
+      cloudEnabled && canAddNewManagedTemplate(authEmployeeId, currentUserDepartment),
+    [authEmployeeId, currentUserDepartment, cloudEnabled],
   );
 
   const activeList = useMemo(
@@ -57,6 +68,13 @@ export function TemplatesPage() {
   const visible = tab === 'active' ? activeList : discardedList;
 
   const handleCreate = (payload: Omit<TemplateListItem, 'id' | 'status'>) => {
+    if (!cloudEnabled) {
+      showToast(
+        '템플릿 공유/관리는 Supabase 연동(배포 환경 변수 설정) 후에만 사용할 수 있습니다.',
+        'warning',
+      );
+      return;
+    }
     if (!canAddNewTemplate) {
       showToast(
         '새 템플릿 추가는 사번 admin 또는 경영지원팀 소속 계정만 할 수 있습니다.',
@@ -137,6 +155,17 @@ export function TemplatesPage() {
             ) : null}
           </div>
         </div>
+        {isSupabaseConfigured() ? (
+          <p className="mb-3 rounded-md border border-info-200 bg-info-50 px-3 py-2 text-[12px] text-info-900">
+            Supabase에 연동된 목록입니다. 관리자·경영지원팀이 저장한 템플릿은 로그인한
+            모든 사용자에게 동일하게 표시됩니다.
+          </p>
+        ) : (
+          <p className="mb-3 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-[12px] text-warning-900">
+            현재 Supabase 연동이 꺼져 있어 템플릿 목록을 불러오지 않습니다. (로컬 저장은
+            사용하지 않습니다.)
+          </p>
+        )}
         <div className="-mx-7 flex gap-0 border-t border-neutral-200 px-7">
           <button
             type="button"

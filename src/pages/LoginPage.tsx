@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { isSupabaseConfigured } from '../lib/supabase/client';
+import { checkSupabaseAppUsersReachable } from '../lib/supabase/connectionHealth';
 import { useAppStore } from '../store/useAppStore';
 
 export function LoginPage() {
@@ -7,6 +9,28 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [cloudHint, setCloudHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setCloudHint(null);
+      return;
+    }
+    let cancelled = false;
+    void checkSupabaseAppUsersReachable().then((s) => {
+      if (cancelled) return;
+      if (s.mode === 'ok') {
+        setCloudHint(
+          'Supabase에 연결되었습니다. 사용자·템플릿이 프로젝트와 동기화됩니다.',
+        );
+      } else if (s.mode === 'error') {
+        setCloudHint(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,6 +120,19 @@ export function LoginPage() {
                 role="alert"
               >
                 {formError}
+              </p>
+            ) : null}
+
+            {cloudHint ? (
+              <p
+                className={`rounded-lg border px-3 py-2 text-center text-[11px] leading-snug ${
+                  cloudHint.startsWith('Supabase에 연결')
+                    ? 'border-success-200 bg-success-50 text-success-900'
+                    : 'border-warning-200 bg-warning-50 text-warning-900'
+                }`}
+                role="status"
+              >
+                {cloudHint}
               </p>
             ) : null}
 

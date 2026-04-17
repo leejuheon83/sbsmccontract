@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { PickManagedTemplateModal } from '../contracts/PickManagedTemplateModal';
-import type { AuditActionType } from '../../types/contract';
 import {
   canPerformContractReviewByDepartment,
   defaultReviewForVer,
@@ -142,58 +141,6 @@ function VersionTimeline() {
                   경영지원팀 승인 대기
                 </span>
               ) : null}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function auditStyle(t: AuditActionType): { bg: string; icon: string } {
-  switch (t) {
-    case 'load':
-      return { bg: 'bg-primary-800', icon: '📂' };
-    case 'edit':
-      return { bg: 'bg-neutral-700', icon: '✎' };
-    case 'ai_accept':
-      return { bg: 'bg-info-700', icon: '🤖' };
-    case 'ai_reject':
-      return { bg: 'bg-warning-700', icon: '⚠' };
-    case 'save':
-      return { bg: 'bg-success-700', icon: '💾' };
-    case 'export':
-      return { bg: 'bg-info-700', icon: '📄' };
-    case 'review_complete':
-      return { bg: 'bg-success-700', icon: '✓' };
-    case 'review_reject':
-      return { bg: 'bg-danger-700', icon: '✕' };
-    default:
-      return { bg: 'bg-neutral-400', icon: '•' };
-  }
-}
-
-function AuditList() {
-  const entries = useAppStore((s) => s.auditEntries);
-  return (
-    <div className="py-1">
-      {entries.slice(0, 8).map((a) => {
-        const st = auditStyle(a.type);
-        return (
-          <div
-            key={a.id}
-            className="flex gap-3 border-b border-neutral-100 px-5 py-3 last:border-b-0"
-          >
-            <div
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs text-white ${st.bg}`}
-            >
-              {st.icon}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-xs text-neutral-700">{a.action}</div>
-              <div className="mt-0.5 text-[11px] text-neutral-400">
-                {a.author} · {a.timestamp}
-              </div>
             </div>
           </div>
         );
@@ -550,6 +497,8 @@ export function EditorWorkspace() {
               onClick={async () => {
                 setWordBusy(true);
                 try {
+                  /** 편집 중인 조항이 있으면 완료 로직을 먼저 강제 반영 */
+                  window.dispatchEvent(new Event('co-force-finish-edit'));
                   await exportDraftAsWordFile();
                 } catch (e) {
                   console.error(e);
@@ -717,7 +666,6 @@ export function EditorWorkspace() {
                   [
                     ['ai', 'AI 검토·제안'],
                     ['ver', '버전 이력'],
-                    ['audit', '감사 로그'],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -805,12 +753,11 @@ export function EditorWorkspace() {
                   </>
                 ) : null}
                 {tab === 'ver' ? <VersionTimeline /> : null}
-                {tab === 'audit' ? <AuditList /> : null}
               </div>
             </>
           ) : (
             <div className="h-full min-h-0 overflow-y-auto p-4">
-              <AuditList />
+              {/* 감사 로그 UI는 숨김 처리 */}
             </div>
           )}
         </div>

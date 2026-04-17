@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import {
+  applyPackRunRanksToFieldValues,
   applyEditableHighlightPackRunsToHtml,
+  previewEditableHighlightPackRunsToHtml,
   buildHighlightSidebarRows,
   computeEditableHighlightPackRuns,
   isNumberedListLeadText,
@@ -85,6 +87,7 @@ describe('applyEditableHighlightPackRunsToHtml', () => {
     );
     expect(out).toMatch(/1\.\s*Beta/);
     expect(out).toMatch(/2\.\s*Alpha/);
+    expect(out.indexOf('1. Beta')).toBeLessThan(out.indexOf('2. Alpha'));
   });
 
   it('체크 해제된 항목은 제거', () => {
@@ -98,5 +101,53 @@ describe('applyEditableHighlightPackRunsToHtml', () => {
     );
     expect(out).toContain('1. B');
     expect(out).not.toContain('A');
+  });
+});
+
+describe('applyPackRunRanksToFieldValues', () => {
+  it('체크 순서(rank)에 맞춰 입력값 앞 번호를 재부여', () => {
+    const out = applyPackRunRanksToFieldValues(
+      [
+        { id: 'h-1', value: '1. 간접광고' },
+        { id: 'h-2', value: '2. 디지털 브랜디드 콘텐츠' },
+      ],
+      ['h-1', 'h-2'],
+      ['h-2', 'h-1'],
+    );
+    expect(out).toEqual([
+      { id: 'h-1', value: '2. 간접광고' },
+      { id: 'h-2', value: '1. 디지털 브랜디드 콘텐츠' },
+    ]);
+  });
+
+  it('미체크 항목은 값을 유지', () => {
+    const out = applyPackRunRanksToFieldValues(
+      [
+        { id: 'h-1', value: '1. A' },
+        { id: 'h-2', value: '2. B' },
+      ],
+      ['h-1', 'h-2'],
+      ['h-2'],
+    );
+    expect(out).toEqual([
+      { id: 'h-1', value: '1. A' },
+      { id: 'h-2', value: '1. B' },
+    ]);
+  });
+});
+
+describe('previewEditableHighlightPackRunsToHtml', () => {
+  it('미체크 항목을 유지한 채 체크 순서대로 위에서 재배치', () => {
+    const html =
+      '<p data-highlight-id="h-1" style="background-color:#FFF2CC">1. A</p>' +
+      '<p data-highlight-id="h-2" style="background-color:#FFF2CC">2. B</p>' +
+      '<p data-highlight-id="h-3" style="background-color:#FFF2CC">3. C</p>';
+    const out = previewEditableHighlightPackRunsToHtml(
+      html,
+      [['h-1', 'h-2', 'h-3']],
+      [['h-2', 'h-1']],
+    );
+    expect(out.indexOf('1. B')).toBeLessThan(out.indexOf('2. A'));
+    expect(out).toContain('3. C');
   });
 });

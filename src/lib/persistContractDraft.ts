@@ -1,7 +1,8 @@
 import { getDraft, putDraft } from './contractDraftDb';
 import type { StoredContractDraft } from './contractDraftTypes';
-import { buildContractDocxBlob, downloadBlob } from './exportContractDocx';
-import { buildDocxPreservingOriginalFormatting } from './exportDocxWithOriginal';
+import { downloadBlob } from './exportContractDocx';
+import { resolveExportBlob } from './resolveExportBlob';
+import { extractTemplateRunDefaultsFromDocxBase64 } from './templateDocxDefaults';
 import { useAppStore } from '../store/useAppStore';
 import { useTemplateListStore } from '../store/useTemplateListStore';
 
@@ -59,25 +60,22 @@ export async function exportDraftAsWordFile(): Promise<void> {
     ? useTemplateListStore.getState().items.find((it) => it.id === sourceId) ?? null
     : null;
   const originalDocxBase64 = sourceItem?.attachment?.originalDocxBase64;
+  const hasHtmlClauses = s.clauses.some((c) => c.bodyFormat === 'html');
+  const templateRunDefaults = originalDocxBase64
+    ? await extractTemplateRunDefaultsFromDocxBase64(originalDocxBase64)
+    : null;
 
-  const blob =
-    originalDocxBase64 && s.clauses.some((c) => c.bodyFormat === 'html')
-      ? (await buildDocxPreservingOriginalFormatting({
-          originalDocxBase64,
-          clauses: s.clauses,
-        })) ??
-        (await buildContractDocxBlob({
-          documentTitle: s.contractDocumentTitle,
-          templateLabel: s.activeTemplate.label,
-          versionLabel: s.displayVer,
-          clauses: s.clauses,
-        }))
-      : await buildContractDocxBlob({
-          documentTitle: s.contractDocumentTitle,
-          templateLabel: s.activeTemplate.label,
-          versionLabel: s.displayVer,
-          clauses: s.clauses,
-        });
+  const blob = await resolveExportBlob({
+    originalDocxBase64,
+    hasHtmlClauses,
+    clauses: s.clauses,
+    reconstruct: {
+      documentTitle: s.contractDocumentTitle,
+      templateLabel: s.activeTemplate.label,
+      versionLabel: s.displayVer,
+      templateRunDefaults,
+    },
+  });
 
   const base =
     (s.contractDocumentTitle.trim() || s.activeTemplate.label || 'contract')
@@ -101,25 +99,22 @@ export async function exportStoredDraftAsWordFile(
       null
     : null;
   const originalDocxBase64 = sourceItem?.attachment?.originalDocxBase64;
+  const hasHtmlClauses = draft.clauses.some((c) => c.bodyFormat === 'html');
+  const templateRunDefaults = originalDocxBase64
+    ? await extractTemplateRunDefaultsFromDocxBase64(originalDocxBase64)
+    : null;
 
-  const blob =
-    originalDocxBase64 && draft.clauses.some((c) => c.bodyFormat === 'html')
-      ? (await buildDocxPreservingOriginalFormatting({
-          originalDocxBase64,
-          clauses: draft.clauses,
-        })) ??
-        (await buildContractDocxBlob({
-          documentTitle: draft.contractDocumentTitle,
-          templateLabel: draft.templateLabel,
-          versionLabel: draft.displayVer,
-          clauses: draft.clauses,
-        }))
-      : await buildContractDocxBlob({
-          documentTitle: draft.contractDocumentTitle,
-          templateLabel: draft.templateLabel,
-          versionLabel: draft.displayVer,
-          clauses: draft.clauses,
-        });
+  const blob = await resolveExportBlob({
+    originalDocxBase64,
+    hasHtmlClauses,
+    clauses: draft.clauses,
+    reconstruct: {
+      documentTitle: draft.contractDocumentTitle,
+      templateLabel: draft.templateLabel,
+      versionLabel: draft.displayVer,
+      templateRunDefaults,
+    },
+  });
 
   const base =
     (draft.contractDocumentTitle.trim() || draft.templateLabel || 'contract')

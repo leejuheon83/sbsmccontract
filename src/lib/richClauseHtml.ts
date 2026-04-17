@@ -70,6 +70,26 @@ export function countYellowEditableHighlightsInHtml(html: string): number {
   return root.querySelectorAll('[data-editable-highlight="1"]').length;
 }
 
+/**
+ * Word 원본 docx의 노란 highlight 치환용.
+ * `markYellowHighlightsEditable`과 동일한 기준·순서로 편집 가능 하이라이트 안의 평문을 뽑습니다.
+ */
+export function extractEditableHighlightPlainTextsFromClauseHtml(
+  html: string,
+): string[] {
+  if (typeof DOMParser === 'undefined') return [];
+  const safe = sanitizeClauseHtml(html);
+  const marked = markYellowHighlightsEditable(safe);
+  const doc = new DOMParser().parseFromString(`<div>${marked}</div>`, 'text/html');
+  const root = doc.body.firstElementChild as HTMLElement | null;
+  if (!root) return [];
+  return Array.from(root.querySelectorAll('[data-editable-highlight="1"]'))
+    .map((el) =>
+      (el as HTMLElement).textContent?.replace(/\u00a0/g, ' ').trim() ?? '',
+    )
+    .filter((t) => t.length > 0);
+}
+
 export function stripEditableHighlightMarkers(html: string): string {
   const noData = html
     .replace(/\sdata-editable-highlight=(?:"1"|'1')/gi, '')

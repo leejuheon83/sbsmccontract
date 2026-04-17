@@ -23,10 +23,13 @@ import {
   rebuildHtmlWithPackSelection,
 } from '../../lib/packClauseSegments';
 import {
+  applyPackRunRanksToFieldValues,
   applyEditableHighlightPackRunsToHtml,
+  previewEditableHighlightPackRunsToHtml,
   buildHighlightSidebarRows,
   computeEditableHighlightPackRuns,
 } from '../../lib/highlightPackApply';
+import { reconcilePackRunSelections } from '../../lib/reconcilePackRunSelections';
 import { ClausePackCheckboxEditor } from './ClausePackCheckboxEditor';
 import { renderClauseBodyWithParagraphs } from './renderBodyWithFields';
 
@@ -103,12 +106,11 @@ export function ClauseBlock({
   /** 노란 하이라이트 없이 본문 직접 편집 시 clause.body 동기화로 인한 innerHTML 재적용 방지 */
   const skipNextPlainSyncRef = useRef(false);
   /**
-   * 우측 컬럼 변경 직후 store의 clause.body와 같을 때 innerHTML 재적용을 건너뜀.
-   * (단순 횟수 스킵은 Strict Mode·추가 layout 패스에서 어긋나 입력이 고정되는 원인이 됨)
+   * 사이드바 동기화 직후 저장된 body값. clause.body와 일치하는 동안은
+   * useLayoutEffect에서 innerHTML 재적용을 건너뜁니다.
+   * startEdit 호출 시 null로 초기화됩니다.
    */
   const pendingSidebarSyncedBodyRef = useRef<string | null>(null);
-  /** clause.body 반영 시 innerHTML 재구성을 건너뛰는 남은 횟수(Strict Mode·연속 layout 대비) */
-  const sidebarLayoutSkipsRemainingRef = useRef(0);
   const leftPaneScrollRef = useRef<HTMLDivElement | null>(null);
   const updateClauseBody = useAppStore((s) => s.updateClauseBody);
   const recordClauseEdit = useAppStore((s) => s.recordClauseEdit);
@@ -150,19 +152,15 @@ export function ClauseBlock({
     const nHighlights = countYellowEditableHighlightsInHtml(clause.body);
 
     if (nHighlights > 0) {
+      // 사이드바 조작으로 저장한 body와 일치하는 동안은 innerHTML 재적용을 건너뜁니다.
+      // (체크/순서 변경 후 DOM이 이미 최신 상태이므로 재초기화하면 안 됨)
       if (
         pendingSidebarSyncedBodyRef.current !== null &&
-        clause.body === pendingSidebarSyncedBodyRef.current &&
-        sidebarLayoutSkipsRemainingRef.current > 0
+        clause.body === pendingSidebarSyncedBodyRef.current
       ) {
-        sidebarLayoutSkipsRemainingRef.current -= 1;
-        if (sidebarLayoutSkipsRemainingRef.current === 0) {
-          pendingSidebarSyncedBodyRef.current = null;
-        }
         return;
       }
       pendingSidebarSyncedBodyRef.current = null;
-      sidebarLayoutSkipsRemainingRef.current = 0;
       root.innerHTML = markYellowHighlightsEditable(clause.body);
       const editableNodes = Array.from(
         root.querySelectorAll<HTMLElement>('[data-editable-highlight="1"]'),
@@ -183,7 +181,9 @@ export function ClauseBlock({
       }
       const plan = computeEditableHighlightPackRuns(editableNodes);
       setHighlightPackPlan(plan);
-      setPackRunSelections(plan.packRuns.map((r) => [...r]));
+      setPackRunSelections((prev) =>
+        reconcilePackRunSelections(prev, plan.packRuns),
+      );
       return;
     }
 
@@ -191,6 +191,7 @@ export function ClauseBlock({
     setHtmlHighlightFields([]);
     setHighlightPackPlan({ packRuns: [], soloIds: [] });
     setPackRunSelections([]);
+    pendingSidebarSyncedBodyRef.current = null;
     if (skipNextPlainSyncRef.current) {
       skipNextPlainSyncRef.current = false;
       root.contentEditable = 'true';
@@ -206,7 +207,6 @@ export function ClauseBlock({
     e.stopPropagation();
     skipNextPlainSyncRef.current = false;
     pendingSidebarSyncedBodyRef.current = null;
-    sidebarLayoutSkipsRemainingRef.current = 0;
     setDraft(clause.bodyFormat === 'html' ? sanitizeClauseHtml(clause.body) : clause.body);
     const p =
       clause.bodyFormat === 'html'
@@ -218,8 +218,7 @@ export function ClauseBlock({
     setEditing(true);
   };
 
-  const finishEdit = (e: MouseEvent) => {
-    e.stopPropagation();
+  const commitEdit = () => {
     let raw =
       clause.bodyFormat === 'html'
         ? (richEditorRef.current?.innerHTML ?? draft)
@@ -263,6 +262,22 @@ export function ClauseBlock({
     setPackRunSelections([]);
   };
 
+  const finishEdit = (e: MouseEvent) => {
+    e.stopPropagation();
+    commitEdit();
+  };
+
+  useEffect(() => {
+    const onForceFinish = () => {
+      if (!editing || readOnly) return;
+      commitEdit();
+    };
+    window.addEventListener('co-force-finish-edit', onForceFinish);
+    return () => {
+      window.removeEventListener('co-force-finish-edit', onForceFinish);
+    };
+  }, [editing, readOnly, clause.bodyFormat, draft, index, clause.title, packPickIndices]);
+
   const scrollToHighlightInEditor = (highlightId: string) => {
     requestAnimationFrame(() => {
       const root = richEditorRef.current;
@@ -293,28 +308,12 @@ export function ClauseBlock({
     });
   };
 
-  const togglePackRunSelection = (runIndex: number, fid: string) => {
-    setPackRunSelections((prev) => {
-      const next = [...prev];
-      while (next.length <= runIndex) next.push([]);
-      const arr = [...(next[runIndex] ?? [])];
-      const j = arr.indexOf(fid);
-      if (j >= 0) next[runIndex] = arr.filter((x) => x !== fid);
-      else next[runIndex] = [...arr, fid];
-      return next;
-    });
-  };
-
-  const handleHtmlHighlightFieldChange = (id: string, nextValue: string) => {
-    const root = richEditorRef.current;
-    if (!root) return;
-
-    const prev = htmlHighlightFieldsRef.current;
-    const nextFields = prev.map((f) =>
-      f.id === id ? { ...f, value: nextValue } : f,
-    );
+  const syncHtmlHighlightFields = (nextFields: Array<{ id: string; value: string }>) => {
     htmlHighlightFieldsRef.current = nextFields;
     setHtmlHighlightFields(nextFields);
+
+    const root = richEditorRef.current;
+    if (!root) return;
 
     for (const f of nextFields) {
       const el = root.querySelector<HTMLElement>(
@@ -327,9 +326,58 @@ export function ClauseBlock({
       sanitizeClauseHtml(root.innerHTML),
     );
     pendingSidebarSyncedBodyRef.current = nextBody;
-    sidebarLayoutSkipsRemainingRef.current = 4;
     updateClauseBody(index, nextBody);
     scheduleClauseAudit();
+  };
+
+  const togglePackRunSelection = (runIndex: number, fid: string) => {
+    const runIds = highlightPackPlanRef.current.packRuns[runIndex] ?? [];
+    const next = [...packRunSelectionsRef.current];
+    while (next.length <= runIndex) next.push([]);
+    const arr = [...(next[runIndex] ?? [])];
+    const j = arr.indexOf(fid);
+    if (j >= 0) next[runIndex] = arr.filter((x) => x !== fid);
+    else next[runIndex] = [...arr, fid];
+    packRunSelectionsRef.current = next;
+    setPackRunSelections(next);
+
+    const root = richEditorRef.current;
+    if (root && highlightPackPlanRef.current.packRuns.length > 0) {
+      const previewHtml = previewEditableHighlightPackRunsToHtml(
+        root.innerHTML,
+        highlightPackPlanRef.current.packRuns,
+        next,
+      );
+      root.innerHTML = previewHtml;
+      const domFields = Array.from(
+        root.querySelectorAll<HTMLElement>('[data-highlight-id]'),
+      )
+        .map((el) => ({
+          id: el.getAttribute('data-highlight-id') ?? '',
+          value: el.textContent ?? '',
+        }))
+        .filter((f) => f.id.length > 0);
+      if (domFields.length > 0) {
+        syncHtmlHighlightFields(domFields);
+        return;
+      }
+    }
+
+    if (runIds.length === 0) return;
+    const nextFields = applyPackRunRanksToFieldValues(
+      htmlHighlightFieldsRef.current,
+      runIds,
+      next[runIndex] ?? [],
+    );
+    syncHtmlHighlightFields(nextFields);
+  };
+
+  const handleHtmlHighlightFieldChange = (id: string, nextValue: string) => {
+    const prev = htmlHighlightFieldsRef.current;
+    const nextFields = prev.map((f) =>
+      f.id === id ? { ...f, value: nextValue } : f,
+    );
+    syncHtmlHighlightFields(nextFields);
   };
 
   const handleHtmlRichEditorInput = () => {
@@ -479,6 +527,10 @@ export function ClauseBlock({
                           highlightPackPlan.packRuns[row.runIndex] ?? [];
                         const order =
                           packRunSelections[row.runIndex] ?? runIds;
+                        const orderedVisible = [
+                          ...order.filter((fid) => runIds.includes(fid)),
+                          ...runIds.filter((fid) => !order.includes(fid)),
+                        ];
                         return (
                           <div
                             key={`pack-run-${row.runIndex}`}
@@ -489,7 +541,7 @@ export function ClauseBlock({
                               체크한 것만 본문에 남고, 체크한 순서로 1·2·3… 이 붙습니다.
                             </p>
                             <div className="space-y-2">
-                              {runIds.map((fid) => {
+                              {orderedVisible.map((fid) => {
                                 const field = htmlHighlightFields.find(
                                   (f) => f.id === fid,
                                 );

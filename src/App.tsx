@@ -40,6 +40,7 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated) {
       void useAppStore.getState().syncCurrentUserDepartmentFromProfile();
+      void hydrateManagedTemplateList();
     }
   }, [isAuthenticated]);
 

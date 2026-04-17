@@ -519,7 +519,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         matrixClauseSourceId: null,
       },
       versionReviewByVer: {},
-      editorBottomTab: 'audit',
+      editorBottomTab: 'ai',
     });
   },
 
@@ -564,8 +564,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   recordClauseEdit: (clauseTitle) => {
-    get().appendAudit(`'${clauseTitle}' 조항 내용 수정`, 'edit');
-    get().showToast(`'${clauseTitle}' 조항 내용 수정`, 'info');
+    // 조항 편집은 입력 중 빈번하게 발생하므로 감사 로그/토스트를 남기지 않습니다.
+    void clauseTitle;
   },
 
   acceptAiSuggestion: () => {
@@ -597,16 +597,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   saveVersion: () => {
-    const { displayVer, activeTemplate, editorOrigin, managedTemplateId, clauses } =
-      get();
+    const { displayVer, activeTemplate } = get();
     if (!activeTemplate) return;
     const newVer = bumpTemplateVersion(displayVer);
     get().appendAudit(`${newVer}으로 저장`, 'save');
-    if (editorOrigin === 'managed' && managedTemplateId) {
-      useTemplateListStore
-        .getState()
-        .syncFromEditor(managedTemplateId, clauses, newVer);
-    }
+    /**
+     * 편집기의 버전 저장은 **계약 초안에만** 반영한다.
+     * 템플릿 관리 원본(ver · clauses · attachment)은 `TemplatesPage`의
+     * `EditTemplateModal` 저장에서만 변경되며, 여기서 자동 동기화하지 않는다.
+     * (Word 내보내기 원본 서식 보존을 위해 필수)
+     */
     set((s) => ({
       displayVer: newVer,
       saveGeneration: s.saveGeneration + 1,
