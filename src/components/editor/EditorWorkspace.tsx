@@ -4,6 +4,7 @@ import {
   canPerformContractReviewByDepartment,
   defaultReviewForVer,
 } from '../../lib/versionReviewPolicy';
+import { isAdminOrManagementSupport } from '../../lib/userManagementPolicy';
 import { useAppStore } from '../../store/useAppStore';
 import { useTemplateListStore } from '../../store/useTemplateListStore';
 import { ClauseBlock } from './ClauseBlock';
@@ -189,6 +190,10 @@ export function EditorWorkspace() {
 
   const isReview = editorMode === 'review';
   const isReviewExportOnly = isReview && reviewApprovedReadOnly;
+  const canSave = isAdminOrManagementSupport({
+    employeeId: authEmployeeId,
+    department: currentUserDepartment,
+  });
 
   const saveReviewDraft = async () => {
     setSaveBusy(true);
@@ -452,7 +457,7 @@ export function EditorWorkspace() {
                 </button>
               </>
             ) : null}
-            {isReview && !isReviewExportOnly ? (
+            {isReview && !isReviewExportOnly && canSave ? (
               <>
                 <button
                   type="button"
@@ -480,7 +485,7 @@ export function EditorWorkspace() {
                 </button>
               </>
             ) : null}
-            {isReviewExportOnly ? (
+            {isReviewExportOnly && canSave ? (
               <button
                 type="button"
                 disabled={reviewUndoBusy || wordBusy}
@@ -526,7 +531,7 @@ export function EditorWorkspace() {
               </svg>
               {wordBusy ? 'Word…' : 'Word 내보내기'}
             </button>
-            {!isReview ? (
+            {!isReview && canSave ? (
               <>
                 <button
                   type="button"
