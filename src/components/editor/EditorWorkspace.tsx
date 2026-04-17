@@ -244,6 +244,8 @@ export function EditorWorkspace() {
       renderFooters: true,
       renderFootnotes: true,
       renderEndnotes: true,
+      useBase64URL: true,
+      experimental: true,
     });
     setPreviewReady(true);
   }, []);
