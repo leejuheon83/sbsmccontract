@@ -216,15 +216,43 @@ function stripLeadingNumber(text: string): string {
   return text.replace(/^\d{1,3}\s*[.)）．]\s*/u, '');
 }
 
+/** 텍스트가 "1. ", "2) " 등 번호로 시작하는 정의 항목인지 판별합니다. */
+function isNumberedItemText(text: string): boolean {
+  return /^\d{1,3}\s*[.)）．]\s*\S/u.test(
+    text.replace(/\u00a0/g, ' ').trimStart(),
+  );
+}
+
 /**
- * Word 세그먼트 원본 텍스트와 HTML 교체 텍스트를 **내용 기반**으로 매칭합니다.
+ * 연속된 번호 항목(numbered item) 인덱스 그룹을 감지합니다.
+ * 예: [6,7,8,9,10] — 5개 항목이 연속으로 "N. ..."으로 시작하는 구간.
+ */
+function detectNumberedRuns(texts: string[]): number[][] {
+  const runs: number[][] = [];
+  let current: number[] = [];
+  for (let i = 0; i < texts.length; i++) {
+    if (isNumberedItemText(texts[i]!)) {
+      current.push(i);
+    } else {
+      if (current.length >= 2) runs.push([...current]);
+      current = [];
+    }
+  }
+  if (current.length >= 2) runs.push(current);
+  return runs;
+}
+
+/**
+ * **하이브리드 매칭**: 번호 항목 그룹은 위치 기반, 나머지는 내용 기반.
  *
- * 핵심 규칙:
- * - `LCS / max(길이)` 로 점수를 매겨 **길이 불균형 매칭을 방지**합니다.
- *   ("협찬" 2글자가 "4. 디지털 브랜디드 콘텐츠...협찬을 의미한다" 50글자에
- *    매칭되는 것을 점수 2/50=0.04 으로 자동 차단)
- * - 번호 접두어를 제거한 뒤 비교하므로 재번호된 항목도 올바르게 매칭됩니다.
- * - 매칭되지 않은 Word 세그먼트는 원본 텍스트를 그대로 유지합니다.
+ * 1단계 — 번호 항목 위치 매칭:
+ *   Word 세그먼트와 교체 텍스트에서 연속 번호 항목 그룹을 감지하고,
+ *   같은 크기의 그룹끼리 순서대로 1:1 위치 매칭합니다.
+ *   → 편집기에서 재배치·재번호한 순서가 그대로 Word에 반영됩니다.
+ *
+ * 2단계 — 나머지 내용 기반 매칭:
+ *   1단계에서 매칭되지 않은 세그먼트와 교체 텍스트를 `LCS / max(길이)`
+ *   유사도로 매칭합니다. 길이 불균형 매칭을 방지합니다.
  */
 function matchSegmentsToReplacements(
   segTexts: string[],
@@ -233,6 +261,39 @@ function matchSegmentsToReplacements(
   const result = new Map<number, string>();
   if (replacements.length === 0) return result;
 
+  const usedSeg = new Set<number>();
+  const usedRepl = new Set<number>();
+
+  /* ── Phase 1: 번호 항목 그룹 위치 매칭 ── */
+  const segRuns = detectNumberedRuns(segTexts);
+  const replRuns = detectNumberedRuns(replacements);
+
+  const matchedReplRuns = new Set<number>();
+  for (const segRun of segRuns) {
+    let bestRri = -1;
+    let bestSizeDiff = Infinity;
+    for (let rri = 0; rri < replRuns.length; rri++) {
+      if (matchedReplRuns.has(rri)) continue;
+      const diff = Math.abs(segRun.length - replRuns[rri]!.length);
+      if (diff < bestSizeDiff) {
+        bestSizeDiff = diff;
+        bestRri = rri;
+      }
+    }
+    if (bestRri < 0) continue;
+    matchedReplRuns.add(bestRri);
+    const replRun = replRuns[bestRri]!;
+    const count = Math.min(segRun.length, replRun.length);
+    for (let i = 0; i < count; i++) {
+      const si = segRun[i]!;
+      const ri = replRun[i]!;
+      result.set(si, replacements[ri]!);
+      usedSeg.add(si);
+      usedRepl.add(ri);
+    }
+  }
+
+  /* ── Phase 2: 나머지 내용 기반 매칭 ── */
   const segNorms = segTexts.map((t) =>
     normalizeForMatch(stripLeadingNumber(t)),
   );
@@ -240,14 +301,15 @@ function matchSegmentsToReplacements(
     normalizeForMatch(stripLeadingNumber(t)),
   );
 
-  /** 모든 (seg, repl) 쌍의 점수를 계산해 높은 순으로 그리디 매칭 */
   type Candidate = { si: number; ri: number; score: number };
   const candidates: Candidate[] = [];
 
   for (let si = 0; si < segNorms.length; si++) {
+    if (usedSeg.has(si)) continue;
     const sn = segNorms[si]!;
     if (sn.length === 0) continue;
     for (let ri = 0; ri < replNorms.length; ri++) {
+      if (usedRepl.has(ri)) continue;
       const rn = replNorms[ri]!;
       if (rn.length === 0) continue;
       const overlap = longestCommonSubstringLen(sn, rn);
@@ -260,9 +322,6 @@ function matchSegmentsToReplacements(
   }
 
   candidates.sort((a, b) => b.score - a.score);
-
-  const usedSeg = new Set<number>();
-  const usedRepl = new Set<number>();
 
   for (const c of candidates) {
     if (usedSeg.has(c.si) || usedRepl.has(c.ri)) continue;
