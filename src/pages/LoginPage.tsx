@@ -56,7 +56,7 @@ export function LoginPage() {
               decoding="async"
             />
             <div>
-              <h1 className="flex items-center gap-1.5">
+              <h1 className="flex items-center justify-center gap-1.5">
                 <span
                   className="text-lg font-extrabold tracking-tight"
                   style={{
