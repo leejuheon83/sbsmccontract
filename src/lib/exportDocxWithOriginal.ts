@@ -211,9 +211,19 @@ function normalizeForMatch(text: string): string {
     .toLowerCase();
 }
 
+/** 번호 접두어("1. ", "2) " 등)를 제거해 핵심 내용만 비교합니다. */
+function stripLeadingNumber(text: string): string {
+  return text.replace(/^\d{1,3}\s*[.)）．]\s*/u, '');
+}
+
 /**
  * Word 세그먼트 원본 텍스트와 HTML 교체 텍스트를 **내용 기반**으로 매칭합니다.
- * - 정규화된 텍스트의 겹침(공통 부분 문자열 비율)이 높은 쌍을 선택합니다.
+ *
+ * 핵심 규칙:
+ * - `LCS / max(길이)` 로 점수를 매겨 **길이 불균형 매칭을 방지**합니다.
+ *   ("협찬" 2글자가 "4. 디지털 브랜디드 콘텐츠...협찬을 의미한다" 50글자에
+ *    매칭되는 것을 점수 2/50=0.04 으로 자동 차단)
+ * - 번호 접두어를 제거한 뒤 비교하므로 재번호된 항목도 올바르게 매칭됩니다.
  * - 매칭되지 않은 Word 세그먼트는 원본 텍스트를 그대로 유지합니다.
  */
 function matchSegmentsToReplacements(
@@ -223,36 +233,42 @@ function matchSegmentsToReplacements(
   const result = new Map<number, string>();
   if (replacements.length === 0) return result;
 
-  const segNorms = segTexts.map(normalizeForMatch);
-  const replNorms = replacements.map(normalizeForMatch);
-  const usedRepl = new Set<number>();
+  const segNorms = segTexts.map((t) =>
+    normalizeForMatch(stripLeadingNumber(t)),
+  );
+  const replNorms = replacements.map((t) =>
+    normalizeForMatch(stripLeadingNumber(t)),
+  );
+
+  /** 모든 (seg, repl) 쌍의 점수를 계산해 높은 순으로 그리디 매칭 */
+  type Candidate = { si: number; ri: number; score: number };
+  const candidates: Candidate[] = [];
 
   for (let si = 0; si < segNorms.length; si++) {
     const sn = segNorms[si]!;
     if (sn.length === 0) continue;
-
-    let bestRi = -1;
-    let bestScore = 0;
-
     for (let ri = 0; ri < replNorms.length; ri++) {
-      if (usedRepl.has(ri)) continue;
       const rn = replNorms[ri]!;
       if (rn.length === 0) continue;
-
       const overlap = longestCommonSubstringLen(sn, rn);
-      const shorter = Math.min(sn.length, rn.length);
-      const score = shorter > 0 ? overlap / shorter : 0;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestRi = ri;
+      const longer = Math.max(sn.length, rn.length);
+      const score = longer > 0 ? overlap / longer : 0;
+      if (score >= 0.4) {
+        candidates.push({ si, ri, score });
       }
     }
+  }
 
-    if (bestRi >= 0 && bestScore >= 0.3) {
-      result.set(si, replacements[bestRi]!);
-      usedRepl.add(bestRi);
-    }
+  candidates.sort((a, b) => b.score - a.score);
+
+  const usedSeg = new Set<number>();
+  const usedRepl = new Set<number>();
+
+  for (const c of candidates) {
+    if (usedSeg.has(c.si) || usedRepl.has(c.ri)) continue;
+    result.set(c.si, replacements[c.ri]!);
+    usedSeg.add(c.si);
+    usedRepl.add(c.ri);
   }
 
   return result;
