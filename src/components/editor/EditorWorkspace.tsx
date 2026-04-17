@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { PickManagedTemplateModal } from '../contracts/PickManagedTemplateModal';
 import {
   detectToxicClauses,
@@ -20,6 +20,7 @@ import {
   buildCurrentDraftWordBlob,
 } from '../../lib/persistContractDraft';
 import { sendReviewRequestNotify } from '../../lib/notifyReviewRequest';
+import { uploadPreviewBlob, deletePreviewBlob } from '../../lib/previewStorage';
 
 function VersionTimeline() {
   const displayVer = useAppStore((s) => s.displayVer);
@@ -167,10 +168,9 @@ export function EditorWorkspace() {
   const [toxicIssues, setToxicIssues] = useState<ToxicClauseIssue[]>([]);
   const [dismissedToxic, setDismissedToxic] = useState<Set<string>>(new Set());
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewReady, setPreviewReady] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
-  const previewBlobRef = useRef<Blob | null>(null);
-  const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [previewIframeUrl, setPreviewIframeUrl] = useState<string | null>(null);
+  const [previewStoragePath, setPreviewStoragePath] = useState<string | null>(null);
   const templateListItems = useTemplateListStore((s) => s.items);
   const editorMode = useAppStore((s) => s.editorMode);
   const closeReviewDraft = useAppStore((s) => s.closeReviewDraft);
@@ -217,65 +217,44 @@ export function EditorWorkspace() {
     setDismissedToxic(new Set());
   };
 
-  const renderDocxInIframe = useCallback(async (blob: Blob) => {
-    await new Promise((r) => setTimeout(r, 150));
-    const iframe = previewIframeRef.current;
-    if (!iframe) return;
-    const iframeDoc = iframe.contentDocument ?? iframe.contentWindow?.document;
-    if (!iframeDoc) return;
-
-    iframeDoc.open();
-    iframeDoc.write(`<!DOCTYPE html><html><head><style>
-      html,body{margin:0;padding:0;background:#e5e7eb;font-family:sans-serif}
-      .docx-wrapper{background:#e5e7eb;padding:24px 0;display:flex;flex-direction:column;align-items:center;gap:24px;min-height:100vh}
-      .docx-wrapper>section.docx{background:#fff;box-shadow:0 2px 16px rgba(0,0,0,.13);border-radius:4px;overflow:hidden}
-    </style></head><body><div id="docx-root"></div></body></html>`);
-    iframeDoc.close();
-
-    const container = iframeDoc.getElementById('docx-root');
-    if (!container) return;
-
-    const docxPreview = await import('docx-preview');
-    await docxPreview.renderAsync(blob, container, iframeDoc.head, {
-      inWrapper: true,
-      ignoreWidth: false,
-      ignoreHeight: false,
-      renderHeaders: true,
-      renderFooters: true,
-      renderFootnotes: true,
-      renderEndnotes: true,
-      useBase64URL: true,
-      experimental: true,
-    });
-    setPreviewReady(true);
-  }, []);
-
   const openPreview = useCallback(async () => {
     setPreviewBusy(true);
-    setPreviewReady(false);
     try {
       window.dispatchEvent(new Event('co-force-finish-edit'));
       const blob = await buildCurrentDraftWordBlob();
-      previewBlobRef.current = blob;
-      setPreviewOpen(true);
-      renderDocxInIframe(blob).catch((e) => {
-        console.error('docx-preview renderAsync failed:', e);
-        showToast('미리보기 렌더링에 실패했습니다', 'warning');
-      });
+
+      try {
+        const { publicUrl, path } = await uploadPreviewBlob(blob);
+        const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(publicUrl)}`;
+        setPreviewStoragePath(path);
+        setPreviewIframeUrl(officeUrl);
+        setPreviewOpen(true);
+      } catch {
+        showToast('Office Online 미리보기를 사용할 수 없어 Word 파일을 다운로드합니다', 'info');
+        const { downloadBlob } = await import('../../lib/exportContractDocx');
+        const s = useAppStore.getState();
+        const base =
+          (s.contractDocumentTitle.trim() || activeTemplate.label || 'contract')
+            .replace(/[<>:"/\\|?*]/g, '_')
+            .slice(0, 120) || 'contract';
+        downloadBlob(blob, `${base}-미리보기.docx`);
+      }
     } catch (e) {
       console.error(e);
       showToast('미리보기 생성에 실패했습니다', 'warning');
-      setPreviewOpen(false);
     } finally {
       setPreviewBusy(false);
     }
-  }, [showToast, renderDocxInIframe]);
+  }, [showToast, activeTemplate]);
 
-  const closePreview = useCallback(() => {
+  const closePreview = useCallback(async () => {
     setPreviewOpen(false);
-    setPreviewReady(false);
-    previewBlobRef.current = null;
-  }, []);
+    setPreviewIframeUrl(null);
+    if (previewStoragePath) {
+      deletePreviewBlob(previewStoragePath).catch(console.error);
+      setPreviewStoragePath(null);
+    }
+  }, [previewStoragePath]);
 
   const dismissToxicIssue = (issue: ToxicClauseIssue) => {
     setDismissedToxic((prev) => {
@@ -902,19 +881,21 @@ export function EditorWorkspace() {
               </div>
             </div>
             <div className="relative min-h-0 flex-1 bg-neutral-100">
-              {!previewReady && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-100/80">
+              {previewIframeUrl ? (
+                <iframe
+                  src={previewIframeUrl}
+                  title="Word 미리보기"
+                  className="h-full w-full border-0"
+                  allowFullScreen
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center">
                   <div className="flex flex-col items-center gap-2">
                     <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-300 border-t-primary-600" />
-                    <span className="text-sm text-neutral-500">문서 렌더링 중…</span>
+                    <span className="text-sm text-neutral-500">문서 업로드 중…</span>
                   </div>
                 </div>
               )}
-              <iframe
-                ref={previewIframeRef}
-                title="Word 미리보기"
-                className="h-full w-full border-0"
-              />
             </div>
           </div>
         </div>
