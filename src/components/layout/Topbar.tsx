@@ -23,8 +23,8 @@ export function Topbar() {
           className="hidden h-7 w-px shrink-0 bg-neutral-200 tablet:block"
           aria-hidden
         />
-        <h1 className="min-w-0 truncate whitespace-nowrap font-sans text-[1.125rem] font-medium leading-tight tracking-[0.01em] text-[#202124] tablet:text-[1.3125rem]">
-          IMC 관련 계약서 자동화
+        <h1 className="min-w-0 shrink-0 whitespace-nowrap font-sans text-[1.125rem] font-medium leading-tight tracking-[0.01em] text-[#202124] tablet:text-[1.3125rem]">
+          📋 IMC 계약서 자동화
         </h1>
       </div>
 

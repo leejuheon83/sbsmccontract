@@ -57,7 +57,7 @@ export function LoginPage() {
             />
             <div>
               <h1 className="text-lg font-bold text-neutral-900">
-                IMC 관련 계약서 자동화
+                IMC 계약서 자동화
               </h1>
               <p className="mt-1 text-[13px] text-neutral-500">
                 관리자가 등록한 사번·비밀번호로만 로그인할 수 있습니다.
