@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { PickManagedTemplateModal } from '../contracts/PickManagedTemplateModal';
 import {
   detectToxicClauses,
@@ -18,6 +18,7 @@ import { patchDraft } from '../../lib/contractDraftDb';
 import {
   exportDraftAsWordFile,
   persistCurrentDraft,
+  buildCurrentDraftWordBlob,
 } from '../../lib/persistContractDraft';
 import { sendReviewRequestNotify } from '../../lib/notifyReviewRequest';
 
@@ -166,6 +167,10 @@ export function EditorWorkspace() {
   const [toxicScanDone, setToxicScanDone] = useState(false);
   const [toxicIssues, setToxicIssues] = useState<ToxicClauseIssue[]>([]);
   const [dismissedToxic, setDismissedToxic] = useState<Set<string>>(new Set());
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const previewBlobRef = useRef<Blob | null>(null);
   const templateListItems = useTemplateListStore((s) => s.items);
   const editorMode = useAppStore((s) => s.editorMode);
   const closeReviewDraft = useAppStore((s) => s.closeReviewDraft);
@@ -211,6 +216,31 @@ export function EditorWorkspace() {
     setToxicScanDone(true);
     setDismissedToxic(new Set());
   };
+
+  const openPreview = useCallback(async () => {
+    setPreviewBusy(true);
+    try {
+      window.dispatchEvent(new Event('co-force-finish-edit'));
+      const blob = await buildCurrentDraftWordBlob();
+      previewBlobRef.current = blob;
+      const arrayBuffer = await blob.arrayBuffer();
+      const mammoth = await import('mammoth');
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      setPreviewHtml(result.value);
+      setPreviewOpen(true);
+    } catch (e) {
+      console.error(e);
+      showToast('미리보기 생성에 실패했습니다', 'warning');
+    } finally {
+      setPreviewBusy(false);
+    }
+  }, [showToast]);
+
+  const closePreview = useCallback(() => {
+    setPreviewOpen(false);
+    setPreviewHtml(null);
+    previewBlobRef.current = null;
+  }, []);
 
   const dismissToxicIssue = (issue: ToxicClauseIssue) => {
     setDismissedToxic((prev) => {
@@ -564,60 +594,8 @@ export function EditorWorkspace() {
             {!isReview ? (
               <button
                 type="button"
-                disabled={finalizeBusy || saveBusy}
-                onClick={async () => {
-                  if (
-                    !window.confirm(
-                      '확정하면 검토 단계로 전달됩니다. 검토 화면(또는 계약서 목록)으로 이동합니다. 계속할까요?',
-                    )
-                  ) {
-                    return;
-                  }
-                  setFinalizeBusy(true);
-                  try {
-                    await persistCurrentDraft();
-                    const id = useAppStore.getState().localDraftId;
-                    if (id) {
-                      await patchDraft(id, { reviewStatus: 'in_review' });
-                    }
-                    appendAudit('검토 요청(확정)', 'save');
-                    const notifyResult = await sendReviewRequestNotify({
-                      contractDocumentTitle,
-                      templateLabel: activeTemplate.label,
-                      submittedByEmployeeId: authEmployeeId,
-                    });
-                    if (notifyResult.ok && !notifyResult.skipped) {
-                      appendAudit('검토 요청 알림 메일 발송', 'export');
-                    }
-                    if (
-                      canPerformContractReviewByDepartment(
-                        currentUserDepartment,
-                      )
-                    ) {
-                      setPage('review');
-                    } else {
-                      setPage('contracts');
-                    }
-                    if (notifyResult.ok) {
-                      showToast(
-                        notifyResult.skipped
-                          ? '검토 단계로 전달되었습니다'
-                          : '검토 단계로 전달되었습니다. 경영지원팀에 알림 메일을 보냈습니다.',
-                        'success',
-                      );
-                    } else {
-                      showToast(
-                        `검토 단계로 전달되었습니다. 알림 메일 발송 실패: ${notifyResult.error}`,
-                        'warning',
-                      );
-                    }
-                  } catch (e) {
-                    console.error(e);
-                    showToast('확정 처리에 실패했습니다', 'warning');
-                  } finally {
-                    setFinalizeBusy(false);
-                  }
-                }}
+                disabled={finalizeBusy || saveBusy || previewBusy}
+                onClick={() => void openPreview()}
                 className="inline-flex items-center gap-1 rounded-md border border-amber-500 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
               >
                 <svg
@@ -632,7 +610,7 @@ export function EditorWorkspace() {
                   <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
                   <polyline points="22 4 12 14.01 9 11.01" />
                 </svg>
-                {finalizeBusy ? '확정…' : '확정'}
+                {previewBusy ? '미리보기 생성 중…' : '확정'}
               </button>
             ) : null}
             {!isReview && canSave ? (
@@ -881,6 +859,99 @@ export function EditorWorkspace() {
         </div>
         )}
       </div>
+
+      {previewOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="flex h-[90vh] w-[90vw] max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-6 py-4">
+              <h2 className="text-sm font-bold text-neutral-900">
+                Word 미리보기
+              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={finalizeBusy}
+                  onClick={async () => {
+                    setFinalizeBusy(true);
+                    try {
+                      await persistCurrentDraft();
+                      const id = useAppStore.getState().localDraftId;
+                      if (id) {
+                        await patchDraft(id, { reviewStatus: 'in_review' });
+                      }
+                      appendAudit('검토 요청(확정)', 'save');
+                      const notifyResult = await sendReviewRequestNotify({
+                        contractDocumentTitle,
+                        templateLabel: activeTemplate.label,
+                        submittedByEmployeeId: authEmployeeId,
+                      });
+                      if (notifyResult.ok && !notifyResult.skipped) {
+                        appendAudit('검토 요청 알림 메일 발송', 'export');
+                      }
+                      closePreview();
+                      if (
+                        canPerformContractReviewByDepartment(
+                          currentUserDepartment,
+                        )
+                      ) {
+                        setPage('review');
+                      } else {
+                        setPage('contracts');
+                      }
+                      if (notifyResult.ok) {
+                        showToast(
+                          notifyResult.skipped
+                            ? '검토 단계로 전달되었습니다'
+                            : '검토 단계로 전달되었습니다. 경영지원팀에 알림 메일을 보냈습니다.',
+                          'success',
+                        );
+                      } else {
+                        showToast(
+                          `검토 단계로 전달되었습니다. 알림 메일 발송 실패: ${notifyResult.error}`,
+                          'warning',
+                        );
+                      }
+                    } catch (e) {
+                      console.error(e);
+                      showToast('확정 처리에 실패했습니다', 'warning');
+                    } finally {
+                      setFinalizeBusy(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  {finalizeBusy ? '확정 처리 중…' : '확정하기'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePreview}
+                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-4 py-2 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto bg-neutral-100 p-4">
+              {previewHtml ? (
+                <div className="mx-auto max-w-3xl rounded-lg border border-neutral-200 bg-white px-10 py-8 shadow-sm">
+                  <div
+                    className="prose prose-sm max-w-none prose-headings:text-neutral-900 prose-p:text-neutral-800 prose-p:leading-relaxed prose-table:border-collapse prose-td:border prose-td:border-neutral-300 prose-td:px-2 prose-td:py-1 prose-th:border prose-th:border-neutral-300 prose-th:bg-neutral-50 prose-th:px-2 prose-th:py-1"
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  />
+                </div>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-neutral-500">
+                  미리보기를 불러오는 중…
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

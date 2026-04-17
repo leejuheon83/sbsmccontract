@@ -42,6 +42,37 @@ export async function persistCurrentDraft(): Promise<void> {
   await putDraft(row);
 }
 
+/** Build a Word Blob from the current editor state (no download). */
+export async function buildCurrentDraftWordBlob(): Promise<Blob> {
+  const s = useAppStore.getState();
+  if (!s.activeTemplate) throw new Error('No active template');
+
+  const sourceId =
+    s.editorOrigin === 'managed'
+      ? s.managedTemplateId
+      : s.selection.matrixClauseSourceId;
+  const sourceItem = sourceId
+    ? useTemplateListStore.getState().items.find((it) => it.id === sourceId) ?? null
+    : null;
+  const originalDocxBase64 = sourceItem?.attachment?.originalDocxBase64;
+  const hasHtmlClauses = s.clauses.some((c) => c.bodyFormat === 'html');
+  const templateRunDefaults = originalDocxBase64
+    ? await extractTemplateRunDefaultsFromDocxBase64(originalDocxBase64)
+    : null;
+
+  return resolveExportBlob({
+    originalDocxBase64,
+    hasHtmlClauses,
+    clauses: s.clauses,
+    reconstruct: {
+      documentTitle: s.contractDocumentTitle,
+      templateLabel: s.activeTemplate.label,
+      versionLabel: s.displayVer,
+      templateRunDefaults,
+    },
+  });
+}
+
 /** Save snapshot then trigger Word download in the browser. */
 export async function exportDraftAsWordFile(): Promise<void> {
   const s = useAppStore.getState();
