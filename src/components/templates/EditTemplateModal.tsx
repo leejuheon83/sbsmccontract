@@ -4,9 +4,8 @@ import {
   buildClausesFromAttachment,
   hintBodyForNonExtractableAttachment,
 } from '../../lib/managedTemplateAdapter';
-import type { ContractDocType, ContractFormType, Genre } from '../../types/contract';
 import type { TemplateListItem, TemplateTone } from '../../types/managedTemplate';
-import { LINK_DOCS, LINK_FORMS, LINK_GENRES, TONE_OPTIONS } from './templateFormConstants';
+import { TONE_OPTIONS } from './templateFormConstants';
 
 export function EditTemplateModal({
   open,
@@ -24,9 +23,6 @@ export function EditTemplateModal({
   const [name, setName] = useState('');
   const [ver, setVer] = useState('v1.0');
   const [tone, setTone] = useState<TemplateTone>('primary');
-  const [linkedGenre, setLinkedGenre] = useState<'' | Genre>('');
-  const [linkedFormType, setLinkedFormType] = useState<'' | ContractFormType>('');
-  const [linkedDocType, setLinkedDocType] = useState<'' | ContractDocType>('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -36,9 +32,6 @@ export function EditTemplateModal({
     setName(item.name);
     setVer(item.ver);
     setTone(item.tone);
-    setLinkedGenre(item.linkedGenre ?? '');
-    setLinkedFormType(item.linkedFormType ?? '');
-    setLinkedDocType(item.linkedDocType ?? '');
     setFile(null);
     if (inputRef.current) inputRef.current.value = '';
     // id·open 기준만 — 같은 카드로 스토어 갱신 시 폼 입력이 지워지지 않게 함
@@ -64,9 +57,6 @@ export function EditTemplateModal({
         name: n,
         ver: v,
         tone,
-        linkedGenre: linkedGenre || undefined,
-        linkedFormType: linkedFormType || undefined,
-        linkedDocType: linkedDocType || undefined,
       };
       if (file) {
         const attachment = await buildAttachmentFromFile(file);
@@ -174,76 +164,6 @@ export function EditTemplateModal({
               ) : (
                 <span className="text-xs text-neutral-400">변경 없음</span>
               )}
-            </div>
-          </div>
-
-          <div className="-mx-1 grid grid-cols-1 gap-3 overflow-x-auto px-1 pb-0.5 tablet:grid-cols-3">
-            <div className="flex min-w-0 flex-col gap-1">
-              <label
-                htmlFor="et-link-genre"
-                className="whitespace-nowrap text-xs font-medium text-neutral-700"
-                title="편집기 연결 · 장르 (선택)"
-              >
-                편집기 연결 · 장르 (선택)
-              </label>
-              <select
-                id="et-link-genre"
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                value={linkedGenre}
-                onChange={(e) => setLinkedGenre((e.target.value || '') as '' | Genre)}
-              >
-                {LINK_GENRES.map((g) => (
-                  <option key={g.value || '_none'} value={g.value}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label
-                htmlFor="et-link-form"
-                className="whitespace-nowrap text-xs font-medium text-neutral-700"
-                title="편집기 연결 · 계약형태 (선택)"
-              >
-                편집기 연결 · 계약형태 (선택)
-              </label>
-              <select
-                id="et-link-form"
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                value={linkedFormType}
-                onChange={(e) =>
-                  setLinkedFormType((e.target.value || '') as '' | ContractFormType)
-                }
-              >
-                {LINK_FORMS.map((f) => (
-                  <option key={f.value || '_none'} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label
-                htmlFor="et-link-doc"
-                className="whitespace-nowrap text-xs font-medium text-neutral-700"
-                title="편집기 연결 · 계약서 유형 (선택)"
-              >
-                편집기 연결 · 계약서 유형 (선택)
-              </label>
-              <select
-                id="et-link-doc"
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                value={linkedDocType}
-                onChange={(e) =>
-                  setLinkedDocType((e.target.value || '') as '' | ContractDocType)
-                }
-              >
-                {LINK_DOCS.map((d) => (
-                  <option key={d.value || '_none'} value={d.value}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
 

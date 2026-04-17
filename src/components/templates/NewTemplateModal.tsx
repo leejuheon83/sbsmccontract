@@ -3,9 +3,8 @@ import {
   buildAttachmentFromFile,
   buildClausesFromAttachment,
 } from '../../lib/managedTemplateAdapter';
-import type { ContractDocType, ContractFormType, Genre } from '../../types/contract';
 import type { TemplateListItem, TemplateTone } from '../../types/managedTemplate';
-import { LINK_DOCS, LINK_FORMS, LINK_GENRES, TONE_OPTIONS } from './templateFormConstants';
+import { TONE_OPTIONS } from './templateFormConstants';
 
 export function NewTemplateModal({
   open,
@@ -19,9 +18,6 @@ export function NewTemplateModal({
   const [name, setName] = useState('');
   const [ver, setVer] = useState('v1.0');
   const [tone, setTone] = useState<TemplateTone>('primary');
-  const [linkedGenre, setLinkedGenre] = useState<'' | Genre>('');
-  const [linkedFormType, setLinkedFormType] = useState<'' | ContractFormType>('');
-  const [linkedDocType, setLinkedDocType] = useState<'' | ContractDocType>('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,9 +28,6 @@ export function NewTemplateModal({
     setName('');
     setVer('v1.0');
     setTone('primary');
-    setLinkedGenre('');
-    setLinkedFormType('');
-    setLinkedDocType('');
     setFile(null);
     if (inputRef.current) inputRef.current.value = '';
   };
@@ -62,9 +55,6 @@ export function NewTemplateModal({
           clauses,
           clauseCount: clauses?.length ?? 0,
           formFieldCount: 0,
-          linkedGenre: linkedGenre || undefined,
-          linkedFormType: linkedFormType || undefined,
-          linkedDocType: linkedDocType || undefined,
           ...(clauses?.length ? { clausesAuthoritative: true } : {}),
         }),
       );
@@ -150,76 +140,6 @@ export function NewTemplateModal({
               ) : (
                 <span className="text-xs text-neutral-400">선택된 파일 없음</span>
               )}
-            </div>
-          </div>
-
-          <div className="-mx-1 grid grid-cols-1 gap-3 overflow-x-auto px-1 pb-0.5 tablet:grid-cols-3">
-            <div className="flex min-w-0 flex-col gap-1">
-              <label
-                htmlFor="nt-link-genre"
-                className="whitespace-nowrap text-xs font-medium text-neutral-700"
-                title="편집기 연결 · 장르 (선택)"
-              >
-                편집기 연결 · 장르 (선택)
-              </label>
-              <select
-                id="nt-link-genre"
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                value={linkedGenre}
-                onChange={(e) => setLinkedGenre((e.target.value || '') as '' | Genre)}
-              >
-                {LINK_GENRES.map((g) => (
-                  <option key={g.value || '_none'} value={g.value}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label
-                htmlFor="nt-link-form"
-                className="whitespace-nowrap text-xs font-medium text-neutral-700"
-                title="편집기 연결 · 계약형태 (선택)"
-              >
-                편집기 연결 · 계약형태 (선택)
-              </label>
-              <select
-                id="nt-link-form"
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                value={linkedFormType}
-                onChange={(e) =>
-                  setLinkedFormType((e.target.value || '') as '' | ContractFormType)
-                }
-              >
-                {LINK_FORMS.map((f) => (
-                  <option key={f.value || '_none'} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label
-                htmlFor="nt-link-doc"
-                className="whitespace-nowrap text-xs font-medium text-neutral-700"
-                title="편집기 연결 · 계약서 유형 (선택)"
-              >
-                편집기 연결 · 계약서 유형 (선택)
-              </label>
-              <select
-                id="nt-link-doc"
-                className="rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                value={linkedDocType}
-                onChange={(e) =>
-                  setLinkedDocType((e.target.value || '') as '' | ContractDocType)
-                }
-              >
-                {LINK_DOCS.map((d) => (
-                  <option key={d.value || '_none'} value={d.value}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
 
