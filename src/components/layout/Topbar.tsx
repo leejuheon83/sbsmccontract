@@ -25,7 +25,7 @@ export function Topbar() {
         />
         <h1 className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <span
-            className="inline-flex items-center rounded-lg px-2.5 py-1 text-[0.95rem] font-extrabold tracking-tight tablet:text-[1.1rem]"
+            className="inline-flex items-center rounded-lg px-2.5 py-1 text-[1.25rem] font-extrabold tracking-tight tablet:text-[1.45rem]"
             style={{
               background: 'linear-gradient(135deg, #1E3A5F 0%, #2563EB 100%)',
               WebkitBackgroundClip: 'text',
@@ -35,7 +35,7 @@ export function Topbar() {
           >
             IMC
           </span>
-          <span className="text-[0.85rem] font-bold tracking-tight text-neutral-800 tablet:text-[0.95rem]">
+          <span className="text-[1.1rem] font-bold tracking-tight text-neutral-800 tablet:text-[1.25rem]">
             계약서 자동화
           </span>
           <span className="ml-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
