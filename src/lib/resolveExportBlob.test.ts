@@ -37,7 +37,7 @@ const RECONSTRUCT = {
 describe('resolveExportBlob', () => {
   it('원본 docx + 치환 가능한 하이라이트가 있으면 서식 보존 Blob을 반환', async () => {
     const base64 = await minimalDocxBase64(
-      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>OLD</w:t></w:r></w:p>',
+      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>간접광고 원본</w:t></w:r></w:p>',
     );
     const clauses: Clause[] = [
       {
@@ -45,7 +45,7 @@ describe('resolveExportBlob', () => {
         title: 't',
         state: 'review',
         bodyFormat: 'html',
-        body: '<p><mark>NEW</mark></p>',
+        body: '<p><mark>간접광고 수정</mark></p>',
       },
     ];
     const blob = await resolveExportBlob({
@@ -55,8 +55,8 @@ describe('resolveExportBlob', () => {
       reconstruct: RECONSTRUCT,
     });
     const xml = await zipToDocXml(blob);
-    expect(xml).toContain('NEW');
-    expect(xml).not.toContain('OLD');
+    expect(xml).toContain('간접광고 수정');
+    expect(xml).not.toContain('원본');
   });
 
   it('원본 docx가 있으나 편집 가능 하이라이트가 없으면 **원본을 그대로** 반환 (재작성 금지)', async () => {

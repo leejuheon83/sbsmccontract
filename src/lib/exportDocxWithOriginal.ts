@@ -203,12 +203,88 @@ function collectParagraphs(xml: string): ParagraphRange[] {
   return out;
 }
 
+/** 정규화된 텍스트 (공백·특문 무시 비교용) */
+function normalizeForMatch(text: string): string {
+  return text
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\s""\u201C\u201D\u2018\u2019<>\[\]()（）「」『』]+/g, '')
+    .toLowerCase();
+}
+
 /**
- * 편집 가능 세그먼트를 문서 순서대로 교체합니다 (**위치 기반 매칭**).
- * - i번째 세그먼트 ↔ i번째 교체문자열로 1:1 매칭합니다.
- * - 교체문자열이 비어있는 세그먼트를 포함한 `<w:p>`가, 치환 후 어떤 `<w:t>`에도
- *   본문 텍스트가 남지 않으면 그 문단 전체를 출력에서 제거합니다. (빈 줄 잔존 금지)
- * - 같은 문단에 편집 불가 텍스트("참고:" 같은 일반 run)가 남아 있으면 문단은 유지합니다.
+ * Word 세그먼트 원본 텍스트와 HTML 교체 텍스트를 **내용 기반**으로 매칭합니다.
+ * - 정규화된 텍스트의 겹침(공통 부분 문자열 비율)이 높은 쌍을 선택합니다.
+ * - 매칭되지 않은 Word 세그먼트는 원본 텍스트를 그대로 유지합니다.
+ */
+function matchSegmentsToReplacements(
+  segTexts: string[],
+  replacements: string[],
+): Map<number, string> {
+  const result = new Map<number, string>();
+  if (replacements.length === 0) return result;
+
+  const segNorms = segTexts.map(normalizeForMatch);
+  const replNorms = replacements.map(normalizeForMatch);
+  const usedRepl = new Set<number>();
+
+  for (let si = 0; si < segNorms.length; si++) {
+    const sn = segNorms[si]!;
+    if (sn.length === 0) continue;
+
+    let bestRi = -1;
+    let bestScore = 0;
+
+    for (let ri = 0; ri < replNorms.length; ri++) {
+      if (usedRepl.has(ri)) continue;
+      const rn = replNorms[ri]!;
+      if (rn.length === 0) continue;
+
+      const overlap = longestCommonSubstringLen(sn, rn);
+      const shorter = Math.min(sn.length, rn.length);
+      const score = shorter > 0 ? overlap / shorter : 0;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestRi = ri;
+      }
+    }
+
+    if (bestRi >= 0 && bestScore >= 0.3) {
+      result.set(si, replacements[bestRi]!);
+      usedRepl.add(bestRi);
+    }
+  }
+
+  return result;
+}
+
+function longestCommonSubstringLen(a: string, b: string): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const short = a.length <= b.length ? a : b;
+  const long = a.length <= b.length ? b : a;
+  let prev = new Uint16Array(short.length + 1);
+  let curr = new Uint16Array(short.length + 1);
+  let best = 0;
+  for (let i = 1; i <= long.length; i++) {
+    for (let j = 1; j <= short.length; j++) {
+      if (long[i - 1] === short[j - 1]) {
+        curr[j] = prev[j - 1]! + 1;
+        if (curr[j]! > best) best = curr[j]!;
+      } else {
+        curr[j] = 0;
+      }
+    }
+    [prev, curr] = [curr, prev];
+    curr.fill(0);
+  }
+  return best;
+}
+
+/**
+ * 편집 가능 세그먼트를 **내용 기반 매칭**으로 교체합니다.
+ * - Word 세그먼트 원본 텍스트와 HTML 교체 텍스트를 비교해 가장 유사한 쌍을 매칭
+ * - 매칭되지 않은 세그먼트는 원본 텍스트를 그대로 유지 (다른 조항의 필드를 건드리지 않음)
+ * - 빈 값으로 치환된 세그먼트가 속한 문단이 전부 비어 있으면 통째로 제거
  */
 export function applyHighlightedTextsToWordXml(
   xml: string,
@@ -216,12 +292,21 @@ export function applyHighlightedTextsToWordXml(
 ): string {
   const runs = parseRuns(xml);
   const segments = collectWordSegments(xml);
-  const segmentValues = segments.map((_, i) => replacements[i] ?? '');
 
-  /** run 인덱스 → 치환된 raw */
+  const segTexts = segments.map((seg) => {
+    let t = '';
+    for (let j = seg.segStart; j <= seg.segEnd; j++) {
+      t += extractRunTextContent(runs[j]!.raw);
+    }
+    return t;
+  });
+
+  const matchMap = matchSegmentsToReplacements(segTexts, replacements);
+
   const patched = new Map<number, string>();
   segments.forEach((seg, si) => {
-    const value = segmentValues[si]!;
+    if (!matchMap.has(si)) return;
+    const value = matchMap.get(si)!;
     let written = false;
     for (let j = seg.segStart; j <= seg.segEnd; j++) {
       const base = runs[j]!.raw;
@@ -236,7 +321,6 @@ export function applyHighlightedTextsToWordXml(
     }
   });
 
-  /** 1차: run 수준 치환이 반영된 XML */
   let cursor = 0;
   let patchedXml = '';
   runs.forEach((r, idx) => {
@@ -246,14 +330,14 @@ export function applyHighlightedTextsToWordXml(
   });
   patchedXml += xml.slice(cursor);
 
-  /** 2차: 빈 세그먼트를 포함한 문단이 완전히 비어 있으면 통째로 제거 */
+  /** 빈 값으로 치환된 세그먼트가 속한 문단이 전부 비어 있으면 통째로 제거 */
   const origParagraphs = collectParagraphs(xml);
   if (origParagraphs.length === 0) return patchedXml;
 
-  /** 원본 XML 기준으로 "빈 값으로 치환된 세그먼트"를 가진 문단 식별 */
   const emptiedParagraphIndices = new Set<number>();
   segments.forEach((seg, si) => {
-    if (segmentValues[si] !== '') return;
+    const value = matchMap.get(si);
+    if (value === undefined || value !== '') return;
     const segStartOffset = runs[seg.segStart]!.start;
     const pi = origParagraphs.findIndex(
       (p) => p.pStart <= segStartOffset && segStartOffset < p.pEnd,
@@ -263,7 +347,6 @@ export function applyHighlightedTextsToWordXml(
 
   if (emptiedParagraphIndices.size === 0) return patchedXml;
 
-  /** 문단 개수가 치환 전/후 동일하다는 전제. 순서·위치는 달라져도 개수는 같다. */
   const patchedParagraphs = collectParagraphs(patchedXml);
   if (patchedParagraphs.length !== origParagraphs.length) return patchedXml;
 

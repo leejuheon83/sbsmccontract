@@ -531,112 +531,112 @@ export function EditorWorkspace() {
               </svg>
               {wordBusy ? 'Word…' : 'Word 내보내기'}
             </button>
-            {!isReview && canSave ? (
-              <>
-                <button
-                  type="button"
-                  disabled={finalizeBusy || saveBusy}
-                  onClick={async () => {
+            {!isReview ? (
+              <button
+                type="button"
+                disabled={finalizeBusy || saveBusy}
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      '확정하면 검토 단계로 전달됩니다. 검토 화면(또는 계약서 목록)으로 이동합니다. 계속할까요?',
+                    )
+                  ) {
+                    return;
+                  }
+                  setFinalizeBusy(true);
+                  try {
+                    await persistCurrentDraft();
+                    const id = useAppStore.getState().localDraftId;
+                    if (id) {
+                      await patchDraft(id, { reviewStatus: 'in_review' });
+                    }
+                    appendAudit('검토 요청(확정)', 'save');
+                    const notifyResult = await sendReviewRequestNotify({
+                      contractDocumentTitle,
+                      templateLabel: activeTemplate.label,
+                      submittedByEmployeeId: authEmployeeId,
+                    });
+                    if (notifyResult.ok && !notifyResult.skipped) {
+                      appendAudit('검토 요청 알림 메일 발송', 'export');
+                    }
                     if (
-                      !window.confirm(
-                        '확정하면 검토 단계로 전달됩니다. 검토 화면(또는 계약서 목록)으로 이동합니다. 계속할까요?',
+                      canPerformContractReviewByDepartment(
+                        currentUserDepartment,
                       )
                     ) {
-                      return;
+                      setPage('review');
+                    } else {
+                      setPage('contracts');
                     }
-                    setFinalizeBusy(true);
-                    try {
-                      await persistCurrentDraft();
-                      const id = useAppStore.getState().localDraftId;
-                      if (id) {
-                        await patchDraft(id, { reviewStatus: 'in_review' });
-                      }
-                      appendAudit('검토 요청(확정)', 'save');
-                      const notifyResult = await sendReviewRequestNotify({
-                        contractDocumentTitle,
-                        templateLabel: activeTemplate.label,
-                        submittedByEmployeeId: authEmployeeId,
-                      });
-                      if (notifyResult.ok && !notifyResult.skipped) {
-                        appendAudit('검토 요청 알림 메일 발송', 'export');
-                      }
-                      if (
-                        canPerformContractReviewByDepartment(
-                          currentUserDepartment,
-                        )
-                      ) {
-                        setPage('review');
-                      } else {
-                        setPage('contracts');
-                      }
-                      if (notifyResult.ok) {
-                        showToast(
-                          notifyResult.skipped
-                            ? '검토 단계로 전달되었습니다'
-                            : '검토 단계로 전달되었습니다. 경영지원팀에 알림 메일을 보냈습니다.',
-                          'success',
-                        );
-                      } else {
-                        showToast(
-                          `검토 단계로 전달되었습니다. 알림 메일 발송 실패: ${notifyResult.error}`,
-                          'warning',
-                        );
-                      }
-                    } catch (e) {
-                      console.error(e);
-                      showToast('확정 처리에 실패했습니다', 'warning');
-                    } finally {
-                      setFinalizeBusy(false);
+                    if (notifyResult.ok) {
+                      showToast(
+                        notifyResult.skipped
+                          ? '검토 단계로 전달되었습니다'
+                          : '검토 단계로 전달되었습니다. 경영지원팀에 알림 메일을 보냈습니다.',
+                        'success',
+                      );
+                    } else {
+                      showToast(
+                        `검토 단계로 전달되었습니다. 알림 메일 발송 실패: ${notifyResult.error}`,
+                        'warning',
+                      );
                     }
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md border border-amber-500 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                  } catch (e) {
+                    console.error(e);
+                    showToast('확정 처리에 실패했습니다', 'warning');
+                  } finally {
+                    setFinalizeBusy(false);
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-md border border-amber-500 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden
                 >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden
-                  >
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                    <polyline points="22 4 12 14.01 9 11.01" />
-                  </svg>
-                  {finalizeBusy ? '확정…' : '확정'}
-                </button>
-                <button
-                  type="button"
-                  disabled={saveBusy || finalizeBusy}
-                  onClick={async () => {
-                    setSaveBusy(true);
-                    try {
-                      await persistCurrentDraft();
-                      saveVersion();
-                    } catch (e) {
-                      console.error(e);
-                      showToast('저장에 실패했습니다 (로컬 DB)', 'warning');
-                    } finally {
-                      setSaveBusy(false);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+                {finalizeBusy ? '확정…' : '확정'}
+              </button>
+            ) : null}
+            {!isReview && canSave ? (
+              <button
+                type="button"
+                disabled={saveBusy || finalizeBusy}
+                onClick={async () => {
+                  setSaveBusy(true);
+                  try {
+                    await persistCurrentDraft();
+                    saveVersion();
+                  } catch (e) {
+                    console.error(e);
+                    showToast('저장에 실패했습니다 (로컬 DB)', 'warning');
+                  } finally {
+                    setSaveBusy(false);
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-md bg-primary-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden
                 >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden
-                  >
-                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                    <polyline points="17 21 17 13 7 13 7 21" />
-                  </svg>
-                  {saveBusy ? '저장…' : '저장'}
-                </button>
-              </>
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                </svg>
+                {saveBusy ? '저장…' : '저장'}
+              </button>
             ) : null}
           </div>
         </div>
