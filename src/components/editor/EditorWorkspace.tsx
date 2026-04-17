@@ -525,13 +525,13 @@ export function EditorWorkspace() {
                 {reviewUndoBusy ? '처리 중…' : '승인완료'}
               </button>
             ) : null}
+            {canSave && (
             <button
               type="button"
               disabled={wordBusy}
               onClick={async () => {
                 setWordBusy(true);
                 try {
-                  /** 편집 중인 조항이 있으면 완료 로직을 먼저 강제 반영 */
                   window.dispatchEvent(new Event('co-force-finish-edit'));
                   await exportDraftAsWordFile();
                 } catch (e) {
@@ -560,6 +560,7 @@ export function EditorWorkspace() {
               </svg>
               {wordBusy ? 'Word…' : 'Word 내보내기'}
             </button>
+            )}
             {!isReview ? (
               <button
                 type="button"
