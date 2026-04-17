@@ -217,33 +217,31 @@ export function EditorWorkspace() {
     setDismissedToxic(new Set());
   };
 
+  const renderDocxToContainer = useCallback(async (blob: Blob) => {
+    await new Promise((r) => setTimeout(r, 100));
+    const container = previewContainerRef.current;
+    if (!container) return;
+    container.innerHTML = '';
+    const docxPreview = await import('docx-preview');
+    await docxPreview.renderAsync(blob, container, undefined, {
+      inWrapper: true,
+      ignoreWidth: false,
+      ignoreHeight: false,
+    });
+    setPreviewReady(true);
+  }, []);
+
   const openPreview = useCallback(async () => {
     setPreviewBusy(true);
+    setPreviewReady(false);
     try {
       window.dispatchEvent(new Event('co-force-finish-edit'));
       const blob = await buildCurrentDraftWordBlob();
       previewBlobRef.current = blob;
-      setPreviewReady(false);
       setPreviewOpen(true);
-      requestAnimationFrame(async () => {
-        try {
-          const container = previewContainerRef.current;
-          if (!container) return;
-          container.innerHTML = '';
-          const { renderAsync } = await import('docx-preview');
-          await renderAsync(blob, container, undefined, {
-            inWrapper: true,
-            ignoreWidth: false,
-            ignoreHeight: false,
-            renderHeaders: true,
-            renderFooters: true,
-            renderFootnotes: true,
-          });
-          setPreviewReady(true);
-        } catch (e) {
-          console.error(e);
-          showToast('미리보기 렌더링에 실패했습니다', 'warning');
-        }
+      renderDocxToContainer(blob).catch((e) => {
+        console.error('docx-preview renderAsync failed:', e);
+        showToast('미리보기 렌더링에 실패했습니다', 'warning');
       });
     } catch (e) {
       console.error(e);
@@ -252,7 +250,7 @@ export function EditorWorkspace() {
     } finally {
       setPreviewBusy(false);
     }
-  }, [showToast]);
+  }, [showToast, renderDocxToContainer]);
 
   const closePreview = useCallback(() => {
     setPreviewOpen(false);
