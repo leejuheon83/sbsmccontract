@@ -168,9 +168,10 @@ export function EditorWorkspace() {
   const [toxicIssues, setToxicIssues] = useState<ToxicClauseIssue[]>([]);
   const [dismissedToxic, setDismissedToxic] = useState<Set<string>>(new Set());
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewReady, setPreviewReady] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const previewBlobRef = useRef<Blob | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const templateListItems = useTemplateListStore((s) => s.items);
   const editorMode = useAppStore((s) => s.editorMode);
   const closeReviewDraft = useAppStore((s) => s.closeReviewDraft);
@@ -223,14 +224,32 @@ export function EditorWorkspace() {
       window.dispatchEvent(new Event('co-force-finish-edit'));
       const blob = await buildCurrentDraftWordBlob();
       previewBlobRef.current = blob;
-      const arrayBuffer = await blob.arrayBuffer();
-      const mammoth = await import('mammoth');
-      const result = await mammoth.convertToHtml({ arrayBuffer });
-      setPreviewHtml(result.value);
+      setPreviewReady(false);
       setPreviewOpen(true);
+      requestAnimationFrame(async () => {
+        try {
+          const container = previewContainerRef.current;
+          if (!container) return;
+          container.innerHTML = '';
+          const { renderAsync } = await import('docx-preview');
+          await renderAsync(blob, container, undefined, {
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            renderHeaders: true,
+            renderFooters: true,
+            renderFootnotes: true,
+          });
+          setPreviewReady(true);
+        } catch (e) {
+          console.error(e);
+          showToast('미리보기 렌더링에 실패했습니다', 'warning');
+        }
+      });
     } catch (e) {
       console.error(e);
       showToast('미리보기 생성에 실패했습니다', 'warning');
+      setPreviewOpen(false);
     } finally {
       setPreviewBusy(false);
     }
@@ -238,8 +257,9 @@ export function EditorWorkspace() {
 
   const closePreview = useCallback(() => {
     setPreviewOpen(false);
-    setPreviewHtml(null);
+    setPreviewReady(false);
     previewBlobRef.current = null;
+    if (previewContainerRef.current) previewContainerRef.current.innerHTML = '';
   }, []);
 
   const dismissToxicIssue = (issue: ToxicClauseIssue) => {
@@ -935,19 +955,16 @@ export function EditorWorkspace() {
                 </button>
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto bg-neutral-100 p-4">
-              {previewHtml ? (
-                <div className="mx-auto max-w-3xl rounded-lg border border-neutral-200 bg-white px-10 py-8 shadow-sm">
-                  <div
-                    className="prose prose-sm max-w-none prose-headings:text-neutral-900 prose-p:text-neutral-800 prose-p:leading-relaxed prose-table:border-collapse prose-td:border prose-td:border-neutral-300 prose-td:px-2 prose-td:py-1 prose-th:border prose-th:border-neutral-300 prose-th:bg-neutral-50 prose-th:px-2 prose-th:py-1"
-                    dangerouslySetInnerHTML={{ __html: previewHtml }}
-                  />
-                </div>
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-neutral-500">
-                  미리보기를 불러오는 중…
+            <div className="relative min-h-0 flex-1 overflow-y-auto bg-neutral-100">
+              {!previewReady && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-100/80">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-300 border-t-primary-600" />
+                    <span className="text-sm text-neutral-500">문서 렌더링 중…</span>
+                  </div>
                 </div>
               )}
+              <div ref={previewContainerRef} className="docx-preview-wrapper mx-auto" />
             </div>
           </div>
         </div>
