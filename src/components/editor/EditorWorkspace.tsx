@@ -170,7 +170,7 @@ export function EditorWorkspace() {
   const [previewReady, setPreviewReady] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const previewBlobRef = useRef<Blob | null>(null);
-  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+  const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const templateListItems = useTemplateListStore((s) => s.items);
   const editorMode = useAppStore((s) => s.editorMode);
   const closeReviewDraft = useAppStore((s) => s.closeReviewDraft);
@@ -217,16 +217,33 @@ export function EditorWorkspace() {
     setDismissedToxic(new Set());
   };
 
-  const renderDocxToContainer = useCallback(async (blob: Blob) => {
-    await new Promise((r) => setTimeout(r, 100));
-    const container = previewContainerRef.current;
+  const renderDocxInIframe = useCallback(async (blob: Blob) => {
+    await new Promise((r) => setTimeout(r, 150));
+    const iframe = previewIframeRef.current;
+    if (!iframe) return;
+    const iframeDoc = iframe.contentDocument ?? iframe.contentWindow?.document;
+    if (!iframeDoc) return;
+
+    iframeDoc.open();
+    iframeDoc.write(`<!DOCTYPE html><html><head><style>
+      html,body{margin:0;padding:0;background:#e5e7eb;font-family:sans-serif}
+      .docx-wrapper{background:#e5e7eb;padding:24px 0;display:flex;flex-direction:column;align-items:center;gap:24px;min-height:100vh}
+      .docx-wrapper>section.docx{background:#fff;box-shadow:0 2px 16px rgba(0,0,0,.13);border-radius:4px;overflow:hidden}
+    </style></head><body><div id="docx-root"></div></body></html>`);
+    iframeDoc.close();
+
+    const container = iframeDoc.getElementById('docx-root');
     if (!container) return;
-    container.innerHTML = '';
+
     const docxPreview = await import('docx-preview');
-    await docxPreview.renderAsync(blob, container, undefined, {
+    await docxPreview.renderAsync(blob, container, iframeDoc.head, {
       inWrapper: true,
       ignoreWidth: false,
       ignoreHeight: false,
+      renderHeaders: true,
+      renderFooters: true,
+      renderFootnotes: true,
+      renderEndnotes: true,
     });
     setPreviewReady(true);
   }, []);
@@ -239,7 +256,7 @@ export function EditorWorkspace() {
       const blob = await buildCurrentDraftWordBlob();
       previewBlobRef.current = blob;
       setPreviewOpen(true);
-      renderDocxToContainer(blob).catch((e) => {
+      renderDocxInIframe(blob).catch((e) => {
         console.error('docx-preview renderAsync failed:', e);
         showToast('미리보기 렌더링에 실패했습니다', 'warning');
       });
@@ -250,13 +267,12 @@ export function EditorWorkspace() {
     } finally {
       setPreviewBusy(false);
     }
-  }, [showToast, renderDocxToContainer]);
+  }, [showToast, renderDocxInIframe]);
 
   const closePreview = useCallback(() => {
     setPreviewOpen(false);
     setPreviewReady(false);
     previewBlobRef.current = null;
-    if (previewContainerRef.current) previewContainerRef.current.innerHTML = '';
   }, []);
 
   const dismissToxicIssue = (issue: ToxicClauseIssue) => {
@@ -883,7 +899,7 @@ export function EditorWorkspace() {
                 </button>
               </div>
             </div>
-            <div className="relative min-h-0 flex-1 overflow-y-auto bg-neutral-100">
+            <div className="relative min-h-0 flex-1 bg-neutral-100">
               {!previewReady && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-100/80">
                   <div className="flex flex-col items-center gap-2">
@@ -892,7 +908,11 @@ export function EditorWorkspace() {
                   </div>
                 </div>
               )}
-              <div ref={previewContainerRef} className="docx-preview-wrapper mx-auto" />
+              <iframe
+                ref={previewIframeRef}
+                title="Word 미리보기"
+                className="h-full w-full border-0"
+              />
             </div>
           </div>
         </div>
