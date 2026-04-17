@@ -305,8 +305,8 @@ export function ContractsPage() {
             목록 새로고침
           </button>
         </div>
-        <div className="overflow-hidden rounded-[10px] border border-neutral-200 bg-white">
-          <table className="w-full border-collapse">
+        <div className="overflow-x-auto rounded-[10px] border border-neutral-200 bg-white">
+          <table className="w-full min-w-[960px] border-collapse">
             <thead>
               <tr>
                 {[
@@ -322,7 +322,9 @@ export function ContractsPage() {
                 ].map((h) => (
                   <th
                     key={h}
-                    className="border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-400"
+                    className={`border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-400 ${
+                      h === '저장 요약' ? '' : 'whitespace-nowrap'
+                    }`}
                   >
                     {h}
                   </th>
@@ -358,28 +360,30 @@ export function ContractsPage() {
                     (!d.archived && st.label === '완료');
                   return (
                     <tr key={d.id} className="hover:bg-neutral-50">
-                      <td className="max-w-[200px] border-b border-neutral-100 px-4 py-3">
+                      <td className="max-w-[200px] whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle">
                         <div className="truncate text-[13px] font-medium text-neutral-900" title={draftDisplayName(d)}>
                           {draftDisplayName(d)}
                         </div>
                       </td>
-                      <td className="border-b border-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
-                        {d.templateLabel || '—'}
+                      <td className="max-w-[260px] whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle text-[13px] text-neutral-600">
+                        <div className="truncate" title={d.templateLabel || '—'}>
+                          {d.templateLabel || '—'}
+                        </div>
                       </td>
-                      <td className="border-b border-neutral-100 px-4 py-3">
+                      <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle">
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${st.className}`}
                         >
                           {st.label}
                         </span>
                       </td>
-                      <td className="border-b border-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
+                      <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle text-[13px] text-neutral-600">
                         {d.displayVer}
                       </td>
-                      <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 text-[12px] text-neutral-500">
+                      <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle text-[12px] text-neutral-500">
                         {formatUpdatedAt(d.updatedAt)}
                       </td>
-                      <td className="max-w-[min(360px,40vw)] border-b border-neutral-100 px-4 py-3">
+                      <td className="w-[min(360px,32vw)] min-w-[200px] max-w-md border-b border-neutral-100 px-4 py-3 align-middle">
                         <p
                           className="line-clamp-2 text-[12px] leading-snug text-neutral-600"
                           title={summarizeDraftBodyPreview(d, 500)}
@@ -387,7 +391,7 @@ export function ContractsPage() {
                           {summarizeDraftBodyPreview(d)}
                         </p>
                       </td>
-                      <td className="border-b border-neutral-100 px-4 py-3">
+                      <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle">
                         <span
                           className={`inline-flex rounded-md border px-2 py-1 text-[12px] font-medium ${reviewApprovalBadgeClass(
                             d.reviewStatus ?? 'pending',
@@ -399,11 +403,11 @@ export function ContractsPage() {
                           )?.label ?? '대기'}
                         </span>
                       </td>
-                      <td className="border-b border-neutral-100 px-4 py-3 text-[12px] text-neutral-500">
+                      <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle text-[12px] text-neutral-500">
                         {author}
                       </td>
-                      <td className="border-b border-neutral-100 px-4 py-3">
-                        <div className="flex flex-wrap gap-1.5">
+                      <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle">
+                        <div className="flex flex-nowrap items-center gap-1.5 [&_button]:shrink-0">
                           {isApprovedRow ? (
                             <>
                               <button

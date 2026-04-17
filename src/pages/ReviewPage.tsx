@@ -138,8 +138,8 @@ export function ReviewPage() {
             목록 새로고침
           </button>
         </div>
-        <div className="overflow-hidden rounded-[10px] border border-neutral-200 bg-white">
-          <table className="w-full border-collapse">
+        <div className="overflow-x-auto rounded-[10px] border border-neutral-200 bg-white">
+          <table className="w-full min-w-[880px] border-collapse">
             <thead>
               <tr>
                 {[
@@ -153,7 +153,9 @@ export function ReviewPage() {
                 ].map((h) => (
                   <th
                     key={h}
-                    className="border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-400"
+                    className={`border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-400 ${
+                      h === '저장 요약' ? '' : 'whitespace-nowrap'
+                    }`}
                   >
                     {h}
                   </th>
@@ -183,7 +185,7 @@ export function ReviewPage() {
               ) : (
                 reviewQueue.map((d) => (
                   <tr key={d.id} className="hover:bg-neutral-50">
-                    <td className="max-w-[200px] border-b border-neutral-100 px-4 py-3">
+                    <td className="max-w-[200px] whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle">
                       <div
                         className="truncate text-[13px] font-medium text-neutral-900"
                         title={draftDisplayName(d)}
@@ -191,16 +193,18 @@ export function ReviewPage() {
                         {draftDisplayName(d)}
                       </div>
                     </td>
-                    <td className="border-b border-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
-                      {d.templateLabel || '—'}
+                    <td className="max-w-[260px] whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle text-[13px] text-neutral-600">
+                      <div className="truncate" title={d.templateLabel || '—'}>
+                        {d.templateLabel || '—'}
+                      </div>
                     </td>
-                    <td className="border-b border-neutral-100 px-4 py-3 text-[13px] text-neutral-600">
+                    <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle text-[13px] text-neutral-600">
                       {d.displayVer}
                     </td>
-                    <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 text-[12px] text-neutral-500">
+                    <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle text-[12px] text-neutral-500">
                       {formatUpdatedAt(d.updatedAt)}
                     </td>
-                    <td className="max-w-[min(360px,40vw)] border-b border-neutral-100 px-4 py-3">
+                    <td className="w-[min(360px,32vw)] min-w-[200px] max-w-md border-b border-neutral-100 px-4 py-3 align-middle">
                       <p
                         className="line-clamp-2 text-[12px] leading-snug text-neutral-600"
                         title={summarizeDraftBodyPreview(d, 500)}
@@ -208,7 +212,7 @@ export function ReviewPage() {
                         {summarizeDraftBodyPreview(d)}
                       </p>
                     </td>
-                    <td className="border-b border-neutral-100 px-4 py-3">
+                    <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle">
                       <select
                         value={d.reviewStatus ?? 'pending'}
                         onChange={async (e) => {
@@ -219,7 +223,7 @@ export function ReviewPage() {
                             void refreshDrafts();
                           }
                         }}
-                        className="max-w-[140px] rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-[12px] text-neutral-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+                        className="w-[140px] shrink-0 rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-[12px] text-neutral-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
                         aria-label="검토 승인 상태"
                       >
                         {REVIEW_OPTIONS.map((o) => (
@@ -229,7 +233,7 @@ export function ReviewPage() {
                         ))}
                       </select>
                     </td>
-                    <td className="border-b border-neutral-100 px-4 py-3">
+                    <td className="whitespace-nowrap border-b border-neutral-100 px-4 py-3 align-middle">
                       {isDraftReviewApproved(d) ? (
                         <button
                           type="button"

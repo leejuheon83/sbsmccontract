@@ -496,7 +496,7 @@ export function DashboardPage() {
         {/* tables */}
         <div className="grid grid-cols-1 gap-5 wide:grid-cols-[1fr_380px]">
           <div
-            className="overflow-hidden rounded-2xl border border-white/60"
+            className="overflow-x-auto rounded-2xl border border-white/60"
             style={{
               background: 'rgba(255,255,255,0.82)',
               backdropFilter: 'blur(12px)',
@@ -521,7 +521,7 @@ export function DashboardPage() {
                   {['계약서명', '유형', '상태', '수정일'].map((h) => (
                     <th
                       key={h}
-                      className="border-b border-neutral-100 bg-neutral-50/50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400"
+                      className="whitespace-nowrap border-b border-neutral-100 bg-neutral-50/50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400"
                     >
                       {h}
                     </th>
@@ -547,20 +547,27 @@ export function DashboardPage() {
                       key={d.id}
                       className="transition-colors hover:bg-blue-50/30"
                     >
-                      <td className="border-b border-neutral-100/60 px-4 py-3 text-[13px] font-medium text-neutral-900">
-                        {draftDisplayName(d)}
+                      <td className="max-w-[200px] whitespace-nowrap border-b border-neutral-100/60 px-4 py-3 align-middle">
+                        <div
+                          className="truncate text-[13px] font-medium text-neutral-900"
+                          title={draftDisplayName(d)}
+                        >
+                          {draftDisplayName(d)}
+                        </div>
                       </td>
-                      <td className="border-b border-neutral-100/60 px-4 py-3 text-[12px] text-neutral-500">
-                        {d.templateLabel || '—'}
+                      <td className="max-w-[220px] whitespace-nowrap border-b border-neutral-100/60 px-4 py-3 align-middle text-[12px] text-neutral-500">
+                        <div className="truncate" title={d.templateLabel || '—'}>
+                          {d.templateLabel || '—'}
+                        </div>
                       </td>
-                      <td className="border-b border-neutral-100/60 px-4 py-3">
+                      <td className="whitespace-nowrap border-b border-neutral-100/60 px-4 py-3 align-middle">
                         <span
                           className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${st.className}`}
                         >
                           {st.label}
                         </span>
                       </td>
-                      <td className="border-b border-neutral-100/60 px-4 py-3 text-[12px] text-neutral-400">
+                      <td className="whitespace-nowrap border-b border-neutral-100/60 px-4 py-3 align-middle text-[12px] text-neutral-400">
                         {formatUpdatedAt(d.updatedAt)}
                       </td>
                     </tr>
