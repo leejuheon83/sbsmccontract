@@ -24,7 +24,7 @@ export function Topbar() {
           aria-hidden
         />
         <h1 className="min-w-0 truncate whitespace-nowrap font-sans text-[1.125rem] font-medium leading-tight tracking-[0.01em] text-[#202124] tablet:text-[1.3125rem]">
-          계약서 자동화
+          IMC 관련 계약서 자동화
         </h1>
       </div>
 
