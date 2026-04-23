@@ -220,8 +220,35 @@ export function EditorWorkspace() {
   const openPreview = useCallback(async () => {
     setPreviewBusy(true);
     try {
+      // 1) 편집 중이던 조항들이 모두 commitEdit → updateClauseBody 를 돌리도록 신호
       window.dispatchEvent(new Event('co-force-finish-edit'));
+      // 2) React setState·Zustand 저장이 모두 flush 될 시간 확보
+      //    - queueMicrotask 한 번만으로는 input onChange 중이던 값이 누락될 수 있음
       await new Promise<void>((r) => queueMicrotask(r));
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      await new Promise<void>((r) => queueMicrotask(r));
+
+      if (import.meta.env?.DEV) {
+        const sNow = useAppStore.getState();
+        const repl = sNow.clauses
+          .filter((c) => c.bodyFormat === 'html')
+          .flatMap((c) => {
+            const doc = new DOMParser().parseFromString(
+              `<div>${c.body}</div>`,
+              'text/html',
+            );
+            const root = doc.body.firstElementChild as HTMLElement | null;
+            if (!root) return [] as string[];
+            return Array.from(
+              root.querySelectorAll<HTMLElement>(
+                'mark, [data-editable-highlight], [data-highlight-id]',
+              ),
+            ).map((el) => (el.textContent ?? '').trim());
+          })
+          .filter(Boolean);
+        console.log('[openPreview] highlight replacements snapshot:', repl);
+      }
+
       const blob = await buildCurrentDraftWordBlob();
 
       try {
