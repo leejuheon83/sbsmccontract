@@ -12,6 +12,8 @@ import {
   stripLeadingTitleFromBodyIfDuplicate,
 } from '../../lib/clausePlaceholders';
 import {
+  applyPlainHighlightValuesToClauseHtml,
+  applySidebarHighlightValuesToRichEditorHtml,
   countYellowEditableHighlightsInHtml,
   markYellowHighlightsEditable,
   sanitizeClauseHtml,
@@ -224,6 +226,24 @@ export function ClauseBlock({
         ? (richEditorRef.current?.innerHTML ?? draft)
         : draft;
 
+    if (clause.bodyFormat === 'html' && htmlHighlightFieldsRef.current.length > 0) {
+      if (richEditorRef.current) {
+        raw = applySidebarHighlightValuesToRichEditorHtml(
+          richEditorRef.current.innerHTML,
+          htmlHighlightFieldsRef.current,
+        );
+      } else {
+        const storeBody =
+          useAppStore.getState().clauses[index]?.body ?? clause.body;
+        raw = markYellowHighlightsEditable(
+          applyPlainHighlightValuesToClauseHtml(
+            storeBody,
+            htmlHighlightFieldsRef.current.map((f) => f.value),
+          ),
+        );
+      }
+    }
+
     if (
       clause.bodyFormat === 'html' &&
       highlightPackPlanRef.current.packRuns.length > 0
@@ -313,7 +333,18 @@ export function ClauseBlock({
     setHtmlHighlightFields(nextFields);
 
     const root = richEditorRef.current;
-    if (!root) return;
+    if (!root) {
+      const baseBody =
+        useAppStore.getState().clauses[index]?.body ?? clause.body;
+      const nextBody = applyPlainHighlightValuesToClauseHtml(
+        baseBody,
+        nextFields.map((f) => f.value),
+      );
+      pendingSidebarSyncedBodyRef.current = nextBody;
+      updateClauseBody(index, nextBody);
+      scheduleClauseAudit();
+      return;
+    }
 
     for (const f of nextFields) {
       const el = root.querySelector<HTMLElement>(
@@ -323,7 +354,12 @@ export function ClauseBlock({
     }
 
     const nextBody = stripEditableHighlightMarkers(
-      sanitizeClauseHtml(root.innerHTML),
+      sanitizeClauseHtml(
+        applySidebarHighlightValuesToRichEditorHtml(
+          root.innerHTML,
+          nextFields,
+        ),
+      ),
     );
     pendingSidebarSyncedBodyRef.current = nextBody;
     updateClauseBody(index, nextBody);

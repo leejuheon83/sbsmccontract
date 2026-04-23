@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import type { Clause } from '../types/contract';
 import { extractEditableHighlightPlainTextsFromClauseHtml } from './richClauseHtml';
+import { isWordFormFieldHighlightRun } from './wordFormFieldRun';
 
 function decodeBase64ToUint8Array(base64: string): Uint8Array {
   const binary = atob(base64);
@@ -18,55 +19,11 @@ function escapeXmlText(text: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function normalizeWordFillHex(raw: string): string {
-  const h = raw.replace(/^#/, '').toUpperCase();
-  if (/^[0-9A-F]{6}$/.test(h)) return h;
-  if (/^[0-9A-F]{3}$/.test(h)) {
-    return h[0]! + h[0]! + h[1]! + h[1]! + h[2]! + h[2]!;
-  }
-  if (/^[0-9A-F]{8}$/.test(h)) return h.slice(2); // ARGB → RGB
-  return h;
-}
-
-/**
- * Word `w:shd/@w:fill` hex (no #) — `richClauseHtml`의 연한 노랑·노란 강조와 맞춤.
- */
-const EDITABLE_WORD_SHD_FILL = new Set(
-  [
-    'FFF2CC',
-    'FEF08A',
-    'FDE68A',
-    'FEF3C7',
-    'FFF9C4',
-    'FFFF99',
-    'FFFF00',
-    'FFFFFF00',
-    'FF0',
-    'FFC000',
-  ].map((s) => normalizeWordFillHex(s)),
-);
-
-function extractShdFillFromRunRaw(runRaw: string): string | null {
-  const m = runRaw.match(
-    /<w:shd\b[^>]*\bw:fill\s*=\s*(["'])([#0-9A-Fa-f]+)\1/i,
-  );
-  if (!m) return null;
-  const hex = m[2]!.replace(/^#/, '');
-  if (!/^[0-9A-Fa-f]{3,8}$/i.test(hex)) return null;
-  return normalizeWordFillHex(hex);
-}
-
-function runHasEditableHighlightOrShade(runRaw: string): boolean {
-  if (/<w:highlight\b[^>]*w:val=(["'])yellow\1/i.test(runRaw)) return true;
-  const fill = extractShdFillFromRunRaw(runRaw);
-  return fill !== null && EDITABLE_WORD_SHD_FILL.has(fill);
-}
-
 type RunPart = {
   start: number;
   end: number;
   raw: string;
-  /** `w:highlight yellow` 또는 편집기와 동일 팔레트의 `w:shd/@w:fill` */
+  /** `wordFormFieldRun` 기준 입력 필드 하이라이트·배경 run */
   isEditableStyle: boolean;
   hasText: boolean;
 };
@@ -77,7 +34,7 @@ function parseRuns(xml: string): RunPart[] {
   let m: RegExpExecArray | null;
   while ((m = runRe.exec(xml)) !== null) {
     const raw = m[0];
-    const isEditableStyle = runHasEditableHighlightOrShade(raw);
+    const isEditableStyle = isWordFormFieldHighlightRun(raw);
     const hasText = /<w:t\b[^>]*>[\s\S]*?<\/w:t>/i.test(raw);
     out.push({
       start: m.index,
@@ -186,8 +143,21 @@ function collectWordSegments(xml: string): WordSegment[] {
   return segments;
 }
 
-function countPatchableRunSegmentsInWordXml(xml: string): number {
+export function countPatchableRunSegmentsInWordXml(xml: string): number {
   return collectWordSegments(xml).length;
+}
+
+/** 디버깅·테스트: Word XML에서 편집 가능 세그먼트별 연결 텍스트 */
+export function listPatchableHighlightSegmentTexts(xml: string): string[] {
+  const runs = parseRuns(xml);
+  const segments = collectWordSegments(xml);
+  return segments.map((seg) => {
+    let t = '';
+    for (let j = seg.segStart; j <= seg.segEnd; j++) {
+      t += extractRunTextContent(runs[j]!.raw);
+    }
+    return t;
+  });
 }
 
 type ParagraphRange = { pStart: number; pEnd: number };
@@ -243,7 +213,7 @@ function detectNumberedRuns(texts: string[]): number[][] {
 }
 
 /**
- * **하이브리드 매칭**: 번호 항목 그룹은 위치 기반, 나머지는 내용 기반.
+ * **하이브리드 매칭**: 번호 항목 그룹은 위치 기반, 나머지는 내용 기반, 마지막은 순서 기반.
  *
  * 1단계 — 번호 항목 위치 매칭:
  *   Word 세그먼트와 교체 텍스트에서 연속 번호 항목 그룹을 감지하고,
@@ -253,6 +223,13 @@ function detectNumberedRuns(texts: string[]): number[][] {
  * 2단계 — 나머지 내용 기반 매칭:
  *   1단계에서 매칭되지 않은 세그먼트와 교체 텍스트를 `LCS / max(길이)`
  *   유사도로 매칭합니다. 길이 불균형 매칭을 방지합니다.
+ *
+ * 3단계 — 남은 세그먼트 수와 남은 치환값 수가 같으면 문서 순서·추출 순서로 1:1:
+ *   플레이스홀더를 완전히 다른 문구로 바꾼 경우 2단계가 매칭하지 못할 수 있어 보완합니다.
+ *
+ * 4단계 — 1~3단계 후에도 **미매칭 Word 세그먼트 수 > 미매칭 치환값 수**이면,
+ *   미매칭 세그먼트 중 **뒤에서부터** 치환값 개수만큼을 HTML 추출 순서와 1:1 대입합니다.
+ *   (앞쪽 잉여 노란 run은 원문 유지 — 표·장식용 하이라이트 등)
  */
 function matchSegmentsToReplacements(
   segTexts: string[],
@@ -330,6 +307,56 @@ function matchSegmentsToReplacements(
     usedRepl.add(c.ri);
   }
 
+  /* ── Phase 3: 플레이스홀더를 전혀 다른 문구로 바꾼 경우 2단계가 전부 스킵될 수 있음.
+   * 남은 세그먼트 수 = 남은 치환값 수이면 **문서 순서 × HTML 추출 순서**로 1:1 대입.
+   * (원본 OOXML run·rPr는 그대로 두고 w:t 텍스트만 바뀜 → 글꼴 유지)
+   */
+  const unmatchedSegIdx: number[] = [];
+  for (let si = 0; si < segTexts.length; si++) {
+    if (!result.has(si)) unmatchedSegIdx.push(si);
+  }
+  const unmatchedReplIdx: number[] = [];
+  for (let ri = 0; ri < replacements.length; ri++) {
+    if (!usedRepl.has(ri)) unmatchedReplIdx.push(ri);
+  }
+  if (
+    unmatchedSegIdx.length === unmatchedReplIdx.length &&
+    unmatchedSegIdx.length > 0
+  ) {
+    for (let k = 0; k < unmatchedSegIdx.length; k++) {
+      const si = unmatchedSegIdx[k]!;
+      const ri = unmatchedReplIdx[k]!;
+      result.set(si, replacements[ri]!);
+      usedSeg.add(si);
+      usedRepl.add(ri);
+    }
+  }
+
+  /* ── Phase 4: 미매칭 Word 세그먼트만 더 많고, 아직 쓰이지 않은 치환값이 있을 때 접미 정렬 1:1.
+   * (이미 result에 있는 세그먼트는 덮어쓰지 않음)
+   */
+  const unmatchedSegAfter: number[] = [];
+  for (let si = 0; si < segTexts.length; si++) {
+    if (!result.has(si)) unmatchedSegAfter.push(si);
+  }
+  const unmatchedReplAfter: number[] = [];
+  for (let ri = 0; ri < replacements.length; ri++) {
+    if (!usedRepl.has(ri)) unmatchedReplAfter.push(ri);
+  }
+  if (
+    unmatchedSegAfter.length > unmatchedReplAfter.length &&
+    unmatchedReplAfter.length > 0
+  ) {
+    const skip = unmatchedSegAfter.length - unmatchedReplAfter.length;
+    for (let k = 0; k < unmatchedReplAfter.length; k++) {
+      const si = unmatchedSegAfter[skip + k]!;
+      const ri = unmatchedReplAfter[k]!;
+      result.set(si, replacements[ri]!);
+      usedSeg.add(si);
+      usedRepl.add(ri);
+    }
+  }
+
   return result;
 }
 
@@ -356,9 +383,10 @@ function longestCommonSubstringLen(a: string, b: string): number {
 }
 
 /**
- * 편집 가능 세그먼트를 **내용 기반 매칭**으로 교체합니다.
- * - Word 세그먼트 원본 텍스트와 HTML 교체 텍스트를 비교해 가장 유사한 쌍을 매칭
- * - 매칭되지 않은 세그먼트는 원본 텍스트를 그대로 유지 (다른 조항의 필드를 건드리지 않음)
+ * 편집 가능 세그먼트를 하이브리드 매칭으로 교체합니다.
+ * - 1·2단계: 번호·내용 유사도 매칭
+ * - 3단계: 남은 항목이 개수만 같으면 순서 1:1 (원본 run 서식·글꼴 유지, 텍스트만 교체)
+ * - 4단계: 미매칭 Word 세그먼트가 더 많으면 접미 정렬로 남은 치환값만 대입
  * - 빈 값으로 치환된 세그먼트가 속한 문단이 전부 비어 있으면 통째로 제거
  */
 export function applyHighlightedTextsToWordXml(

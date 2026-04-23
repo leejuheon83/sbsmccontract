@@ -221,11 +221,14 @@ export function EditorWorkspace() {
     setPreviewBusy(true);
     try {
       window.dispatchEvent(new Event('co-force-finish-edit'));
+      await new Promise<void>((r) => queueMicrotask(r));
       const blob = await buildCurrentDraftWordBlob();
 
       try {
         const { publicUrl, path } = await uploadPreviewBlob(blob);
-        const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(publicUrl)}`;
+        const bust = `co=${Date.now()}`;
+        const srcWithBust = `${publicUrl}${publicUrl.includes('?') ? '&' : '?'}${bust}`;
+        const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(srcWithBust)}`;
         setPreviewStoragePath(path);
         setPreviewIframeUrl(officeUrl);
         setPreviewOpen(true);
@@ -883,6 +886,7 @@ export function EditorWorkspace() {
             <div className="relative min-h-0 flex-1 bg-neutral-100">
               {previewIframeUrl ? (
                 <iframe
+                  key={previewIframeUrl}
                   src={previewIframeUrl}
                   title="Word 미리보기"
                   className="h-full w-full border-0"

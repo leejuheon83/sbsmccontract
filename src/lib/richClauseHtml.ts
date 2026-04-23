@@ -90,6 +90,74 @@ export function extractEditableHighlightPlainTextsFromClauseHtml(
     .filter((t) => t.length > 0);
 }
 
+/**
+ * 편집기 innerHTML(`data-highlight-id` 부여됨)에 사이드바 필드 값을 덮어씁니다.
+ * `innerHTML`이 ref보다 늦게 갱신된 경우에도 Word·저장용 본문과 일치시킵니다.
+ */
+export function applySidebarHighlightValuesToRichEditorHtml(
+  editorHtml: string,
+  fields: Array<{ id: string; value: string }>,
+): string {
+  if (typeof DOMParser === 'undefined' || fields.length === 0) return editorHtml;
+  const doc = new DOMParser().parseFromString(
+    `<div>${editorHtml}</div>`,
+    'text/html',
+  );
+  const root = doc.body.firstElementChild as HTMLElement | null;
+  if (!root) return editorHtml;
+
+  const ordered = Array.from(
+    root.querySelectorAll<HTMLElement>('[data-highlight-id]'),
+  ).sort((a, b) => {
+    const na = a.getAttribute('data-highlight-id') ?? '';
+    const nb = b.getAttribute('data-highlight-id') ?? '';
+    return na.localeCompare(nb, undefined, { numeric: true });
+  });
+
+  fields.forEach((f, idx) => {
+    const byId = root.querySelector<HTMLElement>(
+      `[data-highlight-id="${f.id.replace(/"/g, '')}"]`,
+    );
+    if (byId) {
+      byId.textContent = f.value;
+      return;
+    }
+    if (idx < ordered.length) ordered[idx]!.textContent = f.value;
+  });
+  return root.innerHTML;
+}
+
+/**
+ * 저장용 조항 HTML(보통 `data-highlight-id` 없음)에, 하이라이트 DOM 순서와 동일한 값 배열을 반영합니다.
+ * 편집기 ref가 아직 없을 때 사이드바만으로 스토어를 맞출 때 사용합니다.
+ */
+export function applyPlainHighlightValuesToClauseHtml(
+  html: string,
+  valuesInHighlightDomOrder: string[],
+): string {
+  if (typeof DOMParser === 'undefined') return html;
+  if (valuesInHighlightDomOrder.length === 0) return html;
+  const safe = sanitizeClauseHtml(html);
+  const marked = markYellowHighlightsEditable(safe);
+  const doc = new DOMParser().parseFromString(
+    `<div>${marked}</div>`,
+    'text/html',
+  );
+  const root = doc.body.firstElementChild as HTMLElement | null;
+  if (!root) return html;
+  const nodes = Array.from(
+    root.querySelectorAll<HTMLElement>('[data-editable-highlight="1"]'),
+  );
+  for (
+    let i = 0;
+    i < nodes.length && i < valuesInHighlightDomOrder.length;
+    i++
+  ) {
+    nodes[i]!.textContent = valuesInHighlightDomOrder[i]!;
+  }
+  return stripEditableHighlightMarkers(sanitizeClauseHtml(root.innerHTML));
+}
+
 export function stripEditableHighlightMarkers(html: string): string {
   const noData = html
     .replace(/\sdata-editable-highlight=(?:"1"|'1')/gi, '')

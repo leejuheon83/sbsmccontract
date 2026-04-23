@@ -66,6 +66,19 @@ describe('applyHighlightedTextsToWordXml — 내용 기반 매칭', () => {
     expect(out).not.toContain('원본');
   });
 
+  it('w:highlight lightYellow run 세그먼트를 치환', () => {
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:body><w:p>' +
+      '<w:r><w:rPr><w:highlight w:val="lightYellow"/></w:rPr><w:t>프로그램명 원본</w:t></w:r>' +
+      '</w:p></w:body></w:document>';
+
+    const out = applyHighlightedTextsToWordXml(xml, ['프로그램명 수정']);
+    expect(out).toContain('프로그램명 수정');
+    expect(out).not.toContain('프로그램명 원본');
+  });
+
   it('연속된 w:shd 연한 노랑 fill run 세그먼트를 치환', () => {
     const xml =
       '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -113,6 +126,46 @@ describe('applyHighlightedTextsToWordXml — 내용 기반 매칭', () => {
     expect(out).toContain('2. 디지털 수정');
     expect(out).toContain('3. 유튜브 수정');
     expect(out).not.toContain('원본');
+  });
+
+  it('Word 노란 세그먼트가 치환값보다 많으면 미매칭 구간만 접미 순서로 치환(Phase 4)', () => {
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:body>' +
+      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>추가</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>A</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>B</w:t></w:r></w:p>' +
+      '</w:body></w:document>';
+
+    const out = applyHighlightedTextsToWordXml(xml, ['X', 'Y']);
+    expect(out).toContain('<w:t>X</w:t>');
+    expect(out).toContain('<w:t>Y</w:t>');
+    expect(out).toContain('<w:t>추가</w:t>');
+    expect(out).not.toContain('<w:t>A</w:t>');
+    expect(out).not.toContain('<w:t>B</w:t>');
+  });
+
+  it('플레이스홀더를 전혀 다른 문구로 바꿔도 개수가 같으면 순서대로 치환', () => {
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:body>' +
+      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>&lt;프로그램명&gt;</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>2026. 12</w:t></w:r></w:p>' +
+      '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>대행사법인명</w:t></w:r></w:p>' +
+      '</w:body></w:document>';
+
+    const out = applyHighlightedTextsToWordXml(xml, [
+      '나 혼자 산다',
+      '2026. 4',
+      '(주)테스트법인',
+    ]);
+    expect(out).toContain('나 혼자 산다');
+    expect(out).toContain('2026. 4');
+    expect(out).toContain('(주)테스트법인');
+    expect(out).not.toContain('프로그램명');
+    expect(out).not.toContain('대행사법인명');
   });
 
   it('내용 기반: Word에 추가 하이라이트가 있어도 해당 항목만 매칭', () => {

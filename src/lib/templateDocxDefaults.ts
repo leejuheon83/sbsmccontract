@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import type { IFontAttributesProperties } from 'docx';
+import { isWordFormFieldHighlightRun } from './wordFormFieldRun';
 
 export type TemplateRunDefaults = {
   font?: string | IFontAttributesProperties;
@@ -89,8 +90,22 @@ export function extractTemplateRunDefaultsFromStylesXml(
   return parsed;
 }
 
+/** 본문·머리말·바닥글에서 첫 "입력 필드" run의 `w:rPr` 내부 (글꼴·크기 추출용) */
+function extractRPrInnerFromFirstFormFieldRunInXml(xml: string): string | null {
+  const runRe = /<w:r\b[\s\S]*?<\/w:r>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = runRe.exec(xml)) !== null) {
+    const raw = m[0];
+    if (!isWordFormFieldHighlightRun(raw)) continue;
+    const inner = raw.match(/<w:rPr>([\s\S]*?)<\/w:rPr>/i)?.[1];
+    if (inner?.trim()) return inner;
+  }
+  return null;
+}
+
 /**
  * 첨부된 원본 .docx에서 기본 글꼴·글자 크기를 읽습니다 (폴백 Word 생성용).
+ * 표지 등에 쓰인 **노란 입력란 run**의 rPr를 우선 사용하고, 없으면 styles.xml Normal 등.
  */
 export async function extractTemplateRunDefaultsFromDocxBase64(
   originalDocxBase64: string,
@@ -99,10 +114,28 @@ export async function extractTemplateRunDefaultsFromDocxBase64(
     const zip = await JSZip.loadAsync(
       decodeBase64ToUint8Array(originalDocxBase64),
     );
+    const docPaths = Object.keys(zip.files).filter((p) =>
+      /^word\/(document|header\d+|footer\d+)\.xml$/i.test(p),
+    );
+    docPaths.sort((a, b) => {
+      if (/document\.xml$/i.test(a)) return -1;
+      if (/document\.xml$/i.test(b)) return 1;
+      return a.localeCompare(b);
+    });
+    for (const path of docPaths) {
+      const part = zip.file(path);
+      if (!part) continue;
+      const xml = await part.async('string');
+      const rPrInner = extractRPrInnerFromFirstFormFieldRunInXml(xml);
+      if (rPrInner?.trim()) {
+        const parsed = parseRPrInnerForFontsAndSize(rPrInner);
+        if (parsed.font || parsed.sizeHalfPoints !== undefined) return parsed;
+      }
+    }
     const f = zip.file('word/styles.xml');
     if (!f) return null;
-    const xml = await f.async('string');
-    return extractTemplateRunDefaultsFromStylesXml(xml);
+    const stylesXml = await f.async('string');
+    return extractTemplateRunDefaultsFromStylesXml(stylesXml);
   } catch {
     return null;
   }

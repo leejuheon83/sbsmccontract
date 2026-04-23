@@ -17,6 +17,7 @@ const TEXT_MAX_CHARS = 800_000;
 const HTML_MAX_CHARS = 1_200_000;
 const DOCX_HIGHLIGHT_STYLE_MAP = [
   "highlight[color='yellow'] => mark.co-editable-highlight",
+  "highlight[color='lightYellow'] => mark.co-editable-highlight",
 ];
 
 const TEXT_EXT = new Set(['txt', 'md', 'html', 'htm', 'csv', 'json']);

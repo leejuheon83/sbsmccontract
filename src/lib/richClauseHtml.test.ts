@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import {
+  applyPlainHighlightValuesToClauseHtml,
+  applySidebarHighlightValuesToRichEditorHtml,
   countSelectablePackMarkers,
   countYellowEditableHighlightsInHtml,
   extractEditableHighlightPlainTextsFromClauseHtml,
@@ -27,6 +29,29 @@ describe('extractEditableHighlightPlainTextsFromClauseHtml', () => {
       '첫',
       '둘',
     ]);
+  });
+});
+
+describe('applyPlainHighlightValuesToClauseHtml', () => {
+  it('저장용 HTML의 노란 필드 순서대로 텍스트를 바꾼다', () => {
+    const html = '<p><mark>구</mark> / <mark>날짜</mark></p>';
+    const out = applyPlainHighlightValuesToClauseHtml(html, ['신규', '2026. 4']);
+    expect(extractEditableHighlightPlainTextsFromClauseHtml(out)).toEqual([
+      '신규',
+      '2026. 4',
+    ]);
+  });
+});
+
+describe('applySidebarHighlightValuesToRichEditorHtml', () => {
+  it('data-highlight-id 기준으로 편집기 HTML에 값을 반영', () => {
+    const editor =
+      '<p><mark data-highlight-id="h-1" data-editable-highlight="1">구</mark></p>';
+    const out = applySidebarHighlightValuesToRichEditorHtml(editor, [
+      { id: 'h-1', value: '신규' },
+    ]);
+    expect(out).toContain('신규');
+    expect(out).not.toContain('>구</mark>');
   });
 });
 
