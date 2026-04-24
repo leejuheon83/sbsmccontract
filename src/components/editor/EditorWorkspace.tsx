@@ -253,30 +253,13 @@ export function EditorWorkspace() {
         if (container) {
           container.innerHTML = '';
 
-          // 한글 폰트 fallback 스타일 주입 (렌더링 전)
+          // 기본 레이아웃 스타일만 주입 — 폰트는 Word 원본 그대로 유지
           const styleEl = document.createElement('style');
           styleEl.textContent = `
             .docx-preview-wrap section.docx {
               background: white;
               box-shadow: 0 2px 12px rgba(0,0,0,0.15);
               margin: 16px auto;
-            }
-            .docx-preview-wrap * {
-              font-family:
-                "맑은 고딕", "Malgun Gothic",
-                "나눔고딕", "NanumGothic",
-                "Apple SD Gothic Neo",
-                "Noto Sans KR",
-                sans-serif !important;
-            }
-            .docx-preview-wrap span[style*="font-family"],
-            .docx-preview-wrap p[style*="font-family"] {
-              font-family:
-                "맑은 고딕", "Malgun Gothic",
-                "나눔고딕", "NanumGothic",
-                "Apple SD Gothic Neo",
-                "Noto Sans KR",
-                sans-serif !important;
             }
           `;
           container.appendChild(styleEl);
@@ -286,7 +269,7 @@ export function EditorWorkspace() {
             inWrapper: true,
             ignoreWidth: false,
             ignoreHeight: false,
-            ignoreFonts: true,   // Word 내장 폰트 무시 → 시스템 한글 폰트 사용
+            ignoreFonts: false,  // Word 원본 폰트 정보 그대로 사용
             breakPages: true,
             useBase64URL: true,
             experimental: true,
