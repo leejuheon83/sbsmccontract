@@ -252,12 +252,41 @@ export function EditorWorkspace() {
         const container = previewContainerRef.current;
         if (container) {
           container.innerHTML = '';
+
+          // 한글 폰트 fallback 스타일 주입 (렌더링 전)
+          const styleEl = document.createElement('style');
+          styleEl.textContent = `
+            .docx-preview-wrap section.docx {
+              background: white;
+              box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+              margin: 16px auto;
+            }
+            .docx-preview-wrap * {
+              font-family:
+                "맑은 고딕", "Malgun Gothic",
+                "나눔고딕", "NanumGothic",
+                "Apple SD Gothic Neo",
+                "Noto Sans KR",
+                sans-serif !important;
+            }
+            .docx-preview-wrap span[style*="font-family"],
+            .docx-preview-wrap p[style*="font-family"] {
+              font-family:
+                "맑은 고딕", "Malgun Gothic",
+                "나눔고딕", "NanumGothic",
+                "Apple SD Gothic Neo",
+                "Noto Sans KR",
+                sans-serif !important;
+            }
+          `;
+          container.appendChild(styleEl);
+
           await renderAsync(blob, container, undefined, {
             className: 'docx-preview-wrap',
             inWrapper: true,
             ignoreWidth: false,
             ignoreHeight: false,
-            ignoreFonts: false,
+            ignoreFonts: true,   // Word 내장 폰트 무시 → 시스템 한글 폰트 사용
             breakPages: true,
             useBase64URL: true,
             experimental: true,
