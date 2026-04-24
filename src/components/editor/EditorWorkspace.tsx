@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { PickManagedTemplateModal } from '../contracts/PickManagedTemplateModal';
 import {
   detectToxicClauses,
@@ -171,6 +171,8 @@ export function EditorWorkspace() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewIframeUrl, setPreviewIframeUrl] = useState<string | null>(null);
   const [previewStoragePath, setPreviewStoragePath] = useState<string | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const templateListItems = useTemplateListStore((s) => s.items);
   const editorMode = useAppStore((s) => s.editorMode);
   const closeReviewDraft = useAppStore((s) => s.closeReviewDraft);
@@ -220,54 +222,69 @@ export function EditorWorkspace() {
   const openPreview = useCallback(async () => {
     setPreviewBusy(true);
     try {
-      // 1) 편집 중이던 조항들이 모두 commitEdit → updateClauseBody 를 돌리도록 신호
+      // 1) 편집 중인 조항 강제 저장
       window.dispatchEvent(new Event('co-force-finish-edit'));
-      // 2) React setState·Zustand 저장이 모두 flush 될 시간 확보
-      //    - queueMicrotask 한 번만으로는 input onChange 중이던 값이 누락될 수 있음
+      // 2) Zustand/React 상태 flush 보장 (rAF + microtask 2회)
       await new Promise<void>((r) => queueMicrotask(r));
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       await new Promise<void>((r) => queueMicrotask(r));
 
-      if (import.meta.env?.DEV) {
-        const sNow = useAppStore.getState();
-        const repl = sNow.clauses
-          .filter((c) => c.bodyFormat === 'html')
-          .flatMap((c) => {
-            const doc = new DOMParser().parseFromString(
-              `<div>${c.body}</div>`,
-              'text/html',
-            );
-            const root = doc.body.firstElementChild as HTMLElement | null;
-            if (!root) return [] as string[];
-            return Array.from(
-              root.querySelectorAll<HTMLElement>(
-                'mark, [data-editable-highlight], [data-highlight-id]',
-              ),
-            ).map((el) => (el.textContent ?? '').trim());
-          })
-          .filter(Boolean);
-        console.log('[openPreview] highlight replacements snapshot:', repl);
-      }
-
       const blob = await buildCurrentDraftWordBlob();
 
+      // 이전 blob URL 해제
+      setPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+
+      // docx-preview 로 브라우저 내부 직접 렌더링 시도
       try {
-        const { publicUrl, path } = await uploadPreviewBlob(blob);
-        const bust = `co=${Date.now()}`;
-        const srcWithBust = `${publicUrl}${publicUrl.includes('?') ? '&' : '?'}${bust}`;
-        const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(srcWithBust)}`;
-        setPreviewStoragePath(path);
-        setPreviewIframeUrl(officeUrl);
+        const { renderAsync } = await import('docx-preview');
+        const blobUrl = URL.createObjectURL(blob);
+        setPreviewBlobUrl(blobUrl);
+        setPreviewIframeUrl(null);
         setPreviewOpen(true);
-      } catch {
-        showToast('Office Online 미리보기를 사용할 수 없어 Word 파일을 다운로드합니다', 'info');
-        const { downloadBlob } = await import('../../lib/exportContractDocx');
-        const s = useAppStore.getState();
-        const base =
-          (s.contractDocumentTitle.trim() || activeTemplate.label || 'contract')
-            .replace(/[<>:"/\\|?*]/g, '_')
-            .slice(0, 120) || 'contract';
-        downloadBlob(blob, `${base}-미리보기.docx`);
+
+        // 컨테이너가 마운트될 때까지 대기 후 렌더링
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+        const container = previewContainerRef.current;
+        if (container) {
+          container.innerHTML = '';
+          await renderAsync(blob, container, undefined, {
+            className: 'docx-preview-wrap',
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            ignoreFonts: false,
+            breakPages: true,
+            useBase64URL: true,
+            experimental: true,
+          });
+        }
+      } catch (renderErr) {
+        console.warn('docx-preview 실패, Office Online으로 전환:', renderErr);
+        // fallback: Office Online
+        try {
+          const { publicUrl, path } = await uploadPreviewBlob(blob);
+          const bust = `co=${Date.now()}`;
+          const srcWithBust = `${publicUrl}${publicUrl.includes('?') ? '&' : '?'}${bust}`;
+          const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(srcWithBust)}`;
+          setPreviewStoragePath(path);
+          setPreviewIframeUrl(officeUrl);
+          setPreviewBlobUrl(null);
+          setPreviewOpen(true);
+        } catch {
+          const { downloadBlob } = await import('../../lib/exportContractDocx');
+          const s = useAppStore.getState();
+          const base =
+            (s.contractDocumentTitle.trim() || activeTemplate.label || 'contract')
+              .replace(/[<>:"/\\|?*]/g, '_')
+              .slice(0, 120) || 'contract';
+          downloadBlob(blob, `${base}-미리보기.docx`);
+          showToast('미리보기 대신 Word 파일을 다운로드합니다', 'info');
+        }
       }
     } catch (e) {
       console.error(e);
@@ -280,9 +297,16 @@ export function EditorWorkspace() {
   const closePreview = useCallback(async () => {
     setPreviewOpen(false);
     setPreviewIframeUrl(null);
+    setPreviewBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     if (previewStoragePath) {
       deletePreviewBlob(previewStoragePath).catch(console.error);
       setPreviewStoragePath(null);
+    }
+    if (previewContainerRef.current) {
+      previewContainerRef.current.innerHTML = '';
     }
   }, [previewStoragePath]);
 
@@ -910,7 +934,14 @@ export function EditorWorkspace() {
                 </button>
               </div>
             </div>
-            <div className="relative min-h-0 flex-1 bg-neutral-100">
+            <div className="relative min-h-0 flex-1 overflow-y-auto bg-neutral-200">
+              {/* docx-preview 직접 렌더링 컨테이너 (네트워크 캐시 없음) */}
+              <div
+                ref={previewContainerRef}
+                className="mx-auto min-h-full"
+                style={{ display: previewIframeUrl ? 'none' : 'block' }}
+              />
+              {/* fallback: Office Online */}
               {previewIframeUrl ? (
                 <iframe
                   key={previewIframeUrl}
@@ -919,11 +950,11 @@ export function EditorWorkspace() {
                   className="h-full w-full border-0"
                   allowFullScreen
                 />
-              ) : (
+              ) : !previewBlobUrl && (
                 <div className="flex h-full items-center justify-center">
                   <div className="flex flex-col items-center gap-2">
                     <div className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-300 border-t-primary-600" />
-                    <span className="text-sm text-neutral-500">문서 업로드 중…</span>
+                    <span className="text-sm text-neutral-500">문서 렌더링 중…</span>
                   </div>
                 </div>
               )}

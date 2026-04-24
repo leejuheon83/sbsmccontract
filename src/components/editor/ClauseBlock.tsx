@@ -455,7 +455,7 @@ export function ClauseBlock({
               onClick={finishEdit}
               className="rounded-md border border-primary-300 bg-white px-2 py-0.5 text-[11px] font-medium text-primary-800 hover:bg-primary-50"
             >
-              완료
+              저장
             </button>
           ) : (
             <button
