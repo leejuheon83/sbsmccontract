@@ -278,6 +278,20 @@ function matchSegmentsToReplacements(
     normalizeForMatch(stripLeadingNumber(t)),
   );
 
+  /**
+   * 중복 Word 세그먼트 방어:
+   * 동일한 정규화 텍스트를 가진 Word 세그먼트가 2개 이상 있을 때
+   * (예: 표 셀 "[프로그램명]" 2개 vs 편집기 1개),
+   * 첫 번째 세그먼트가 정확한 매칭 replacement 를 가져간 뒤
+   * 두 번째 세그먼트가 유사도가 낮은 엉뚱한 replacement 를 탈취하지 않도록,
+   * 이미 매칭에 쓰인 정규화 텍스트와 동일한 세그먼트는 Phase 2 에서 제외합니다.
+   */
+  const usedSegNorms = new Set<string>();
+  for (const [si, _repl] of result) {
+    const n = segNorms[si];
+    if (n && n.length > 0) usedSegNorms.add(n);
+  }
+
   type Candidate = { si: number; ri: number; score: number };
   const candidates: Candidate[] = [];
 
@@ -285,6 +299,9 @@ function matchSegmentsToReplacements(
     if (usedSeg.has(si)) continue;
     const sn = segNorms[si]!;
     if (sn.length === 0) continue;
+    // 이미 매칭된 세그먼트와 정규화 텍스트가 동일하면 Phase 2 에서 제외
+    // (Word 에 중복 하이라이트가 있지만 편집기에는 하나만 있는 케이스)
+    if (usedSegNorms.has(sn)) continue;
     for (let ri = 0; ri < replNorms.length; ri++) {
       if (usedRepl.has(ri)) continue;
       const rn = replNorms[ri]!;
@@ -305,6 +322,9 @@ function matchSegmentsToReplacements(
     result.set(c.si, replacements[c.ri]!);
     usedSeg.add(c.si);
     usedRepl.add(c.ri);
+    // 새로 매칭된 세그먼트의 정규화 텍스트도 usedSegNorms 에 추가
+    const sn = segNorms[c.si];
+    if (sn && sn.length > 0) usedSegNorms.add(sn);
   }
 
   /* ── Phase 3: 플레이스홀더를 전혀 다른 문구로 바꾼 경우 2단계가 전부 스킵될 수 있음.
@@ -406,6 +426,19 @@ export function applyHighlightedTextsToWordXml(
 
   const matchMap = matchSegmentsToReplacements(segTexts, replacements);
 
+  if (import.meta.env?.DEV) {
+    console.group(`[applyHighlights] matchMap (${matchMap.size} pairs, segs=${segTexts.length}, repls=${replacements.length})`);
+    matchMap.forEach((repl, si) => {
+      const orig = segTexts[si] ?? '';
+      if (orig !== repl) {
+        console.log(`  W${si}: ${JSON.stringify(orig.slice(0, 60))} → ${JSON.stringify(repl.slice(0, 60))}`);
+      }
+    });
+    const unmatchedSegs = segTexts.filter((_, i) => !matchMap.has(i));
+    if (unmatchedSegs.length) console.log('  UNMATCHED segs:', unmatchedSegs.map((s) => JSON.stringify(s.slice(0, 40))));
+    console.groupEnd();
+  }
+
   const patched = new Map<number, string>();
   segments.forEach((seg, si) => {
     if (!matchMap.has(si)) return;
@@ -490,6 +523,14 @@ export async function buildDocxPreservingOriginalFormatting(params: {
   clauses: Clause[];
 }): Promise<Blob | null> {
   const replacements = extractEditedHighlightTextsFromClauses(params.clauses);
+
+  if (import.meta.env?.DEV) {
+    console.group('[buildDocx] highlight replacements from clauses');
+    console.log('html clauses:', params.clauses.filter((c) => c.bodyFormat === 'html').length);
+    replacements.forEach((r, i) => console.log(`  R${i}`, JSON.stringify(r.slice(0, 80))));
+    console.groupEnd();
+  }
+
   if (replacements.length === 0) return null;
 
   const zip = await JSZip.loadAsync(
@@ -507,6 +548,14 @@ export async function buildDocxPreservingOriginalFormatting(params: {
     const xml = await file.async('string');
     const segCount = countPatchableRunSegmentsInWordXml(xml);
     if (segCount === 0) continue;
+
+    if (import.meta.env?.DEV) {
+      const segs = listPatchableHighlightSegmentTexts(xml);
+      console.group(`[buildDocx] patching ${path} (${segs.length} segs vs ${replacements.length} repls)`);
+      segs.forEach((s, i) => console.log(`  W${i}`, JSON.stringify(s.slice(0, 80))));
+      console.groupEnd();
+    }
+
     // 번호 기반 매칭이므로 모든 replacements를 넘기고, 함수 내에서 번호로 매칭합니다.
     const patched = applyHighlightedTextsToWordXml(xml, replacements);
     zip.file(path, patched);
