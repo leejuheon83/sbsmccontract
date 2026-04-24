@@ -171,6 +171,7 @@ export function EditorWorkspace() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewIframeUrl, setPreviewIframeUrl] = useState<string | null>(null);
   const [previewStoragePath, setPreviewStoragePath] = useState<string | null>(null);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const templateListItems = useTemplateListStore((s) => s.items);
   const editorMode = useAppStore((s) => s.editorMode);
   const closeReviewDraft = useAppStore((s) => s.closeReviewDraft);
@@ -227,12 +228,29 @@ export function EditorWorkspace() {
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       await new Promise<void>((r) => queueMicrotask(r));
 
+      // ── 진단 로그: 어떤 값이 Word에 주입되는지 확인 ──
+      const stateSnap = useAppStore.getState();
+      const htmlClauses = stateSnap.clauses.filter((c) => c.bodyFormat === 'html');
+      console.group('[미리보기 진단] replacements (저장된 하이라이트 값)');
+      console.log('html 조항 수:', htmlClauses.length);
+      htmlClauses.forEach((c, ci) => {
+        const doc = new DOMParser().parseFromString(`<div>${c.body}</div>`, 'text/html');
+        const root = doc.body.firstElementChild as HTMLElement | null;
+        const marks = root
+          ? Array.from(root.querySelectorAll<HTMLElement>('mark'))
+          : [];
+        console.log(`  clause[${ci}] marks(${marks.length}):`);
+        marks.forEach((m, i) =>
+          console.log(`    R${i}: ${JSON.stringify(m.textContent?.trim()?.slice(0, 80))}`),
+        );
+      });
+      console.groupEnd();
+
       const blob = await buildCurrentDraftWordBlob();
+      setPreviewBlob(blob);
 
       // Supabase Storage에 업로드 후 Office Online으로 렌더링
-      // (원본 Word 폰트·서식 완벽 보존)
       const { publicUrl, path } = await uploadPreviewBlob(blob);
-      // 매 호출마다 완전히 다른 경로를 쓰므로 CDN 캐시 없음
       const officeUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(publicUrl)}`;
       setPreviewStoragePath(path);
       setPreviewIframeUrl(officeUrl);
@@ -869,6 +887,24 @@ export function EditorWorkspace() {
                   </svg>
                   {finalizeBusy ? '확정 처리 중…' : '확정하기'}
                 </button>
+                {/* Word 직접 다운로드 — 미리보기와 동일한 blob, 로컬 Word로 확인 가능 */}
+                {previewBlob && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = URL.createObjectURL(previewBlob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `미리보기_${Date.now()}.docx`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-4 py-2 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
+                    title="미리보기와 동일한 Word 파일 직접 다운로드"
+                  >
+                    ⬇ Word 다운로드
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={closePreview}
@@ -878,7 +914,7 @@ export function EditorWorkspace() {
                 </button>
               </div>
             </div>
-            <div className="relative min-h-0 flex-1 overflow-y-auto bg-neutral-200">
+            <div className="relative min-h-0 flex-1 bg-neutral-100">
               {previewIframeUrl ? (
                 <iframe
                   key={previewIframeUrl}
