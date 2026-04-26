@@ -8,6 +8,10 @@ import {
 import type { Clause } from '../../types/contract';
 import { useAppStore } from '../../store/useAppStore';
 import {
+  registerActiveEditor,
+  unregisterActiveEditor,
+} from '../../lib/activeEditorRegistry';
+import {
   mergeStrippedClauseBodyWithTitleLine,
   stripLeadingTitleFromBodyIfDuplicate,
 } from '../../lib/clausePlaceholders';
@@ -105,6 +109,8 @@ export function ClauseBlock({
   highlightPackPlanRef.current = highlightPackPlan;
   packRunSelectionsRef.current = packRunSelections;
   const richEditorRef = useRef<HTMLDivElement | null>(null);
+  /** 항상 최신 commitEdit를 가리키는 ref — 이벤트·레지스트리 핸들러에서 사용 */
+  const commitEditRef = useRef<() => void>(() => {});
   /** 노란 하이라이트 없이 본문 직접 편집 시 clause.body 동기화로 인한 innerHTML 재적용 방지 */
   const skipNextPlainSyncRef = useRef(false);
   /**
@@ -282,21 +288,33 @@ export function ClauseBlock({
     setPackRunSelections([]);
   };
 
+  // 렌더마다 최신 commitEdit로 ref 갱신 — 이벤트/레지스트리 핸들러가 stale 클로저를 피함
+  commitEditRef.current = commitEdit;
+
   const finishEdit = (e: MouseEvent) => {
     e.stopPropagation();
     commitEdit();
   };
 
+  // co-force-finish-edit 이벤트: ref 경유로 항상 최신 commitEdit 호출
   useEffect(() => {
     const onForceFinish = () => {
       if (!editing || readOnly) return;
-      commitEdit();
+      commitEditRef.current();
     };
     window.addEventListener('co-force-finish-edit', onForceFinish);
     return () => {
       window.removeEventListener('co-force-finish-edit', onForceFinish);
     };
-  }, [editing, readOnly, clause.bodyFormat, draft, index, clause.title, packPickIndices]);
+  }, [editing, readOnly]);
+
+  // 레지스트리 등록/해제 — editing 중일 때만 등록
+  useEffect(() => {
+    if (!editing || readOnly) return;
+    const key = `clause-${index}-${clause.num}`;
+    registerActiveEditor(key, () => commitEditRef.current());
+    return () => unregisterActiveEditor(key);
+  }, [editing, readOnly, index, clause.num]);
 
   const scrollToHighlightInEditor = (highlightId: string) => {
     requestAnimationFrame(() => {

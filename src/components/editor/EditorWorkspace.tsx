@@ -21,6 +21,7 @@ import {
 } from '../../lib/persistContractDraft';
 import { sendReviewRequestNotify } from '../../lib/notifyReviewRequest';
 import { uploadPreviewBlob, deletePreviewBlob } from '../../lib/previewStorage';
+import { flushAllActiveEditors } from '../../lib/activeEditorRegistry';
 
 function VersionTimeline() {
   const displayVer = useAppStore((s) => s.displayVer);
@@ -221,30 +222,43 @@ export function EditorWorkspace() {
   const openPreview = useCallback(async () => {
     setPreviewBusy(true);
     try {
-      // 1) 편집 중인 조항 강제 저장
+      // 1) 편집 중인 조항 강제 저장 — 레지스트리(안정) + 이벤트(폴백) 이중 호출
+      flushAllActiveEditors();
       window.dispatchEvent(new Event('co-force-finish-edit'));
       // 2) Zustand/React 상태 flush 보장
       await new Promise<void>((r) => queueMicrotask(r));
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       await new Promise<void>((r) => queueMicrotask(r));
 
-      // ── 진단 로그: 어떤 값이 Word에 주입되는지 확인 ──
+      // ── 진단: 실제 주입값을 토스트·콘솔로 동시 표시 ──
       const stateSnap = useAppStore.getState();
       const htmlClauses = stateSnap.clauses.filter((c) => c.bodyFormat === 'html');
-      console.group('[미리보기 진단] replacements (저장된 하이라이트 값)');
-      console.log('html 조항 수:', htmlClauses.length);
-      htmlClauses.forEach((c, ci) => {
+      let totalMarks = 0;
+      const firstValues: string[] = [];
+      htmlClauses.forEach((c) => {
         const doc = new DOMParser().parseFromString(`<div>${c.body}</div>`, 'text/html');
         const root = doc.body.firstElementChild as HTMLElement | null;
-        const marks = root
-          ? Array.from(root.querySelectorAll<HTMLElement>('mark'))
-          : [];
-        console.log(`  clause[${ci}] marks(${marks.length}):`);
-        marks.forEach((m, i) =>
-          console.log(`    R${i}: ${JSON.stringify(m.textContent?.trim()?.slice(0, 80))}`),
-        );
+        const marks = root ? Array.from(root.querySelectorAll<HTMLElement>('mark')) : [];
+        totalMarks += marks.length;
+        marks.forEach((m) => {
+          const v = m.textContent?.trim() ?? '';
+          if (v) firstValues.push(v);
+        });
       });
+
+      // 콘솔 진단
+      console.group('[미리보기 진단] replacements (저장된 하이라이트 값)');
+      console.log('html 조항 수:', htmlClauses.length, '/ 총 marks:', totalMarks);
+      firstValues.forEach((v, i) => console.log(`  R${i}: ${JSON.stringify(v.slice(0, 80))}`));
       console.groupEnd();
+
+      // 사용자에게 직접 보여주는 진단 토스트
+      if (htmlClauses.length === 0) {
+        showToast('⚠ HTML 조항 없음 — 편집 내용이 일반 텍스트로 처리됩니다', 'warning');
+      } else {
+        const preview = firstValues.slice(0, 3).map((v) => `「${v.slice(0, 20)}」`).join(' ');
+        showToast(`✅ 하이라이트 ${totalMarks}개 반영: ${preview || '(없음)'}`, 'info');
+      }
 
       const blob = await buildCurrentDraftWordBlob();
       setPreviewBlob(blob);
