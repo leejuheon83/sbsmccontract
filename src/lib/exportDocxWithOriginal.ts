@@ -377,6 +377,31 @@ function matchSegmentsToReplacements(
     }
   }
 
+  /* ── Phase 5: 동일 원문 세그먼트 전파 ──────────────────────────────────────
+   * Word에 동일한 플레이스홀더가 여러 곳(예: 표지 + 본문의 [프로그램명])에
+   * 반복될 때, Phase 1~4에서 한 곳이 매칭됐으면 동일 원문(정규화)을 가진
+   * 나머지 미매칭 세그먼트에도 같은 치환값을 전파합니다.
+   *
+   * 이를 통해 "표지 [프로그램명]이 수정 안 되는" 버그를 해결합니다.
+   * (Phase 4의 접미 정렬이 표지를 건너뛰어도, Phase 5가 동일 원문으로 찾아 전파)
+   */
+  const matchedNormToRepl = new Map<string, string>();
+  for (const [si, repl] of result) {
+    const n = normalizeForMatch(segTexts[si] ?? '');
+    if (n.length > 0 && !matchedNormToRepl.has(n)) {
+      matchedNormToRepl.set(n, repl);
+    }
+  }
+  for (let si = 0; si < segTexts.length; si++) {
+    if (result.has(si)) continue;
+    const n = normalizeForMatch(segTexts[si] ?? '');
+    if (n.length === 0) continue;
+    const propagated = matchedNormToRepl.get(n);
+    if (propagated !== undefined) {
+      result.set(si, propagated);
+    }
+  }
+
   return result;
 }
 
